@@ -40,6 +40,20 @@ function switchScreen(screenName) {
   });
   document.getElementById(`${screenName}-screen`).classList.add('active');
   currentScreen = screenName;
+  
+  // Handle lobby music (Chug Jug With You)
+  const queueAudio = document.getElementById('queue-audio');
+  if (queueAudio) {
+    if (screenName === 'queue' || screenName === 'lobby') {
+      queueAudio.volume = 0.5; // Optional: Adjust volume for balance
+      if (typeof userHasInteracted !== 'undefined' && userHasInteracted) {
+        queueAudio.play().catch(e => console.warn('Audio autoplay prevented:', e));
+      }
+    } else {
+      queueAudio.pause();
+      queueAudio.currentTime = 0;
+    }
+  }
 }
 
 // Initialize WebSocket connection
@@ -276,11 +290,11 @@ function initializeGame(game) {
      case 'Connect Four':
        currentGame = new ConnectFour(gameArea, onGameMove, onGameEnd, isPlayer1);
        break;
-     case 'Trivia':
-       currentGame = new Trivia(gameArea, onGameMove, onGameEnd, isPlayer1);
+     case 'Checkers':
+       currentGame = new Checkers(gameArea, onGameMove, onGameEnd, isPlayer1);
        break;
-     case 'Word Battle':
-       currentGame = new WordBattle(gameArea, onGameMove, onGameEnd, isPlayer1);
+     case 'Chess':
+       currentGame = new Chess(gameArea, onGameMove, onGameEnd, isPlayer1);
        break;
      case 'Rock Paper Scissors':
        currentGame = new RockPaperScissors(gameArea, onGameMove, onGameEnd, isPlayer1);
@@ -301,13 +315,9 @@ function handleGameMove(message) {
    
    const move = message.move;
    
-   if (selectedGame === 'Tic Tac Toe' || selectedGame === 'Connect Four') {
+   if (selectedGame === 'Tic Tac Toe' || selectedGame === 'Connect Four' || selectedGame === 'Checkers' || selectedGame === 'Chess') {
      if (currentGame.receivedMove) {
        currentGame.receivedMove(move);
-     }
-   } else if (selectedGame === 'Trivia' || selectedGame === 'Word Battle') {
-     if (currentGame.receivedAnswer) {
-       currentGame.receivedAnswer(move);
      }
    } else if (selectedGame === 'Rock Paper Scissors') {
      if (currentGame.receivedMove) {
@@ -859,8 +869,15 @@ function cleanup() {
 
 // Initialize
 document.addEventListener('click', () => {
-  userHasInteracted = true;
-  console.log('User interaction detected - audio autoplay should now be allowed');
+  if (!userHasInteracted) {
+    userHasInteracted = true;
+    console.log('User interaction detected - audio autoplay should now be allowed');
+    const queueAudio = document.getElementById('queue-audio');
+    if (queueAudio && (currentScreen === 'lobby' || currentScreen === 'queue')) {
+      queueAudio.volume = 0.5;
+      queueAudio.play().catch(e => console.warn(e));
+    }
+  }
 });
 
 document.addEventListener('touchstart', () => {
