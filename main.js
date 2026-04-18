@@ -16,7 +16,13 @@ let isPlayer1 = true;
 
 const SIGNALING_SERVER = window.location.hostname === 'localhost' 
   ? `ws://${window.location.host}` 
-  : `wss://kazzywazzy.onrender.com`;
+  : (window.location.protocol === 'https:' ? `wss://kazzywazzy.onrender.com` : `ws://kazzywazzy.onrender.com`);
+
+console.log('Environment:', {
+  hostname: window.location.hostname,
+  protocol: window.location.protocol,
+  SIGNALING_SERVER
+});
 
 // Screen management
 function switchScreen(screenName) {
@@ -260,8 +266,10 @@ async function initializeVoiceChat() {
     // Initialize WebRTC peer connection
     const configuration = {
       iceServers: [
-        { urls: ['stun:stun.l.google.com:19302'] },
-        { urls: ['stun:stun1.l.google.com:19302'] }
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' },
+        { urls: 'stun:global.stun.twilio.com:3478' }
       ]
     };
     
@@ -329,8 +337,10 @@ async function handleOffer(message) {
     if (!peerConnection) {
       const configuration = {
         iceServers: [
-          { urls: ['stun:stun.l.google.com:19302'] },
-          { urls: ['stun:stun1.l.google.com:19302'] }
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' },
+          { urls: 'stun:stun2.l.google.com:19302' },
+          { urls: 'stun:global.stun.twilio.com:3478' }
         ]
       };
       
@@ -367,6 +377,10 @@ async function handleOffer(message) {
       
       peerConnection.onconnectionstatechange = () => {
         console.log('PeerConnection state:', peerConnection.connectionState);
+        
+        if (peerConnection.connectionState === 'failed' || peerConnection.connectionState === 'disconnected') {
+          console.error('Peer connection failed or disconnected');
+        }
       };
     }
     
