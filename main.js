@@ -241,6 +241,9 @@ function initializeGame(game) {
      default:
        gameArea.innerHTML = '<p>Game not implemented yet</p>';
    }
+
+    // Expose on window so inline onclick handlers in games.js can access it
+    window.currentGame = currentGame;
  }
 
 function handleGameMove(message) {
@@ -732,6 +735,7 @@ function cleanup() {
   gameId = null;
   selectedGame = null;
   currentGame = null;
+  window.currentGame = null;
   microphoneEnabled = false;
   speakerEnabled = true;
 }
