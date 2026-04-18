@@ -185,7 +185,12 @@ function handleGameStarted(message) {
    
    switchScreen('game');
    initializeGame(message.game);
-   initializeVoiceChat();
+   
+   // Only the caller (player1) initiates voice chat.
+   // The answerer (player2) waits for the offer to arrive via handleOffer().
+   if (isPlayer1) {
+     initializeVoiceChat();
+   }
  }
 
 function initializeGame(game) {
@@ -257,7 +262,7 @@ function handleGameMove(message) {
  }
 
 // ============================================================
-// VOICE CHAT - COMPLETE REIMPLEMENTATION
+// VOICE CHAT - FIXED IMPLEMENTATION
 // ============================================================
 
 // Voice chat state
@@ -265,19 +270,17 @@ let voiceState = {
   localStream: null,
   remoteStream: null,
   peerConnection: null,
-  isCaller: false
+  isCaller: false,
+  iceCandidateBuffer: [],  // Buffer ICE candidates that arrive before PC is ready
+  audioLevelInterval: null
 };
-
-const STUN_SERVERS = [
-  'stun:stun.l.google.com:19302',
-  'stun:stun1.l.google.com:19302',
-  'stun:stun2.l.google.com:19302',
-  'stun:global.stun.twilio.com:3478'
-];
 
 const RTCConfig = {
   iceServers: [
-    ...STUN_SERVERS.map(url => ({ urls: url })),
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:global.stun.twilio.com:3478' },
     {
       urls: 'turn:openrelay.metered.ca:443',
       username: 'openrelayproject',
@@ -286,12 +289,16 @@ const RTCConfig = {
   ]
 };
 
+/**
+ * Called ONLY by the caller (isPlayer1).
+ * The answerer (isPlayer2) does NOT call this — they wait for
+ * the OFFER message to arrive via handleOffer().
+ */
 async function initializeVoiceChat() {
-  console.log('🎤 VOICE CHAT: Starting initialization...');
+  console.log('🎤 VOICE CHAT [CALLER]: Starting initialization...');
   
   try {
     // Step 1: Get microphone
-    console.log('🎤 VOICE CHAT: Requesting microphone access...');
     voiceState.localStream = await navigator.mediaDevices.getUserMedia({
       audio: {
         echoCancellation: true,
@@ -300,57 +307,60 @@ async function initializeVoiceChat() {
       },
       video: false
     });
-    console.log('✅ VOICE CHAT: Microphone access granted');
+    console.log('✅ VOICE CHAT [CALLER]: Microphone access granted');
+    updateLocalIndicator(true);
     
     // Step 2: Create peer connection
-    console.log('🔌 VOICE CHAT: Creating RTCPeerConnection...');
     voiceState.peerConnection = new RTCPeerConnection(RTCConfig);
     voiceState.isCaller = true;
     
-    // Step 3: Add local tracks
-    console.log('📍 VOICE CHAT: Adding local audio tracks...');
+    // Step 3: Add local tracks BEFORE creating offer
     voiceState.localStream.getAudioTracks().forEach(track => {
       voiceState.peerConnection.addTrack(track, voiceState.localStream);
     });
-    console.log('✅ VOICE CHAT: Local tracks added');
     
     // Step 4: Setup event handlers
     setupVoiceChatHandlers();
     
     // Step 5: Create and send offer
-    console.log('📤 VOICE CHAT: Creating offer...');
     const offer = await voiceState.peerConnection.createOffer();
     await voiceState.peerConnection.setLocalDescription(offer);
-    console.log('✅ VOICE CHAT: Offer created, sending to partner...');
+    console.log('📤 VOICE CHAT [CALLER]: Offer created, sending to partner...');
     
     sendMessage({
       type: 'OFFER',
-      offer: offer
+      offer: voiceState.peerConnection.localDescription
     });
     
-    console.log('✅ VOICE CHAT: Initialization complete');
+    // Flush any ICE candidates that arrived early
+    flushICECandidateBuffer();
+    
+    startAudioLevelMonitor();
+    console.log('✅ VOICE CHAT [CALLER]: Initialization complete');
     
   } catch (error) {
-    console.error('❌ VOICE CHAT: Initialization failed:', error);
-    alert('Microphone access denied. Please check permissions.');
+    console.error('❌ VOICE CHAT [CALLER]: Initialization failed:', error);
   }
 }
 
 function setupVoiceChatHandlers() {
-  console.log('⚙️ VOICE CHAT: Setting up event handlers...');
-  
   const pc = voiceState.peerConnection;
   
   // When we receive a remote audio track
   pc.ontrack = (event) => {
-    console.log('🎵 VOICE CHAT: Received remote audio track');
-    console.log('   Track:', event.track.kind, 'ID:', event.track.id);
-    console.log('   Streams:', event.streams.length);
+    console.log('🎵 VOICE CHAT: Received remote audio track:', event.track.kind);
     
     if (event.streams && event.streams.length > 0) {
       voiceState.remoteStream = event.streams[0];
-      playRemoteAudio();
+    } else {
+      // Fallback: create a new stream from the track
+      if (!voiceState.remoteStream) {
+        voiceState.remoteStream = new MediaStream();
+      }
+      voiceState.remoteStream.addTrack(event.track);
     }
+    playRemoteAudio();
+    updateRemoteIndicator(true);
   };
   
   // Connection state changes
@@ -358,8 +368,12 @@ function setupVoiceChatHandlers() {
     const state = pc.connectionState;
     console.log('📡 VOICE CHAT: Connection state:', state);
     
-    if (state === 'failed' || state === 'disconnected' || state === 'closed') {
-      console.error('❌ VOICE CHAT: Connection lost');
+    if (state === 'connected') {
+      console.log('✅ VOICE CHAT: Peer connection established!');
+      updateRemoteIndicator(true);
+    } else if (state === 'failed' || state === 'disconnected' || state === 'closed') {
+      console.error('❌ VOICE CHAT: Connection lost:', state);
+      updateRemoteIndicator(false);
     }
   };
   
@@ -367,10 +381,9 @@ function setupVoiceChatHandlers() {
     console.log('🧊 VOICE CHAT: ICE state:', pc.iceConnectionState);
   };
   
-  // Send ICE candidates
+  // Send ICE candidates to the remote peer
   pc.onicecandidate = (event) => {
     if (event.candidate) {
-      console.log('📤 VOICE CHAT: Sending ICE candidate');
       sendMessage({
         type: 'ICE_CANDIDATE',
         candidate: event.candidate
@@ -380,38 +393,45 @@ function setupVoiceChatHandlers() {
 }
 
 function playRemoteAudio() {
-  console.log('🔊 VOICE CHAT: Setting up remote audio playback...');
-  
   const remoteAudio = document.getElementById('remote-audio');
   if (!remoteAudio) {
-    console.error('❌ VOICE CHAT: Remote audio element not found');
+    console.error('❌ VOICE CHAT: Remote audio element not found in DOM');
     return;
   }
   
   remoteAudio.srcObject = voiceState.remoteStream;
   remoteAudio.muted = false;
+  remoteAudio.volume = 1.0;
   
-  // Try to play
-  remoteAudio.play()
-    .then(() => {
-      console.log('✅ VOICE CHAT: Remote audio is playing');
-    })
-    .catch(err => {
-      console.error('❌ VOICE CHAT: Could not play remote audio:', err.message);
-      // Retry after user interaction
-      document.addEventListener('click', () => {
-        remoteAudio.play().catch(e => console.error('Retry failed:', e));
-      }, { once: true });
-    });
+  const playPromise = remoteAudio.play();
+  if (playPromise !== undefined) {
+    playPromise
+      .then(() => {
+        console.log('✅ VOICE CHAT: Remote audio is playing');
+      })
+      .catch(err => {
+        console.warn('⚠️ VOICE CHAT: Autoplay blocked:', err.message);
+        // Browser blocked autoplay — retry on next user click
+        const retryPlay = () => {
+          remoteAudio.play()
+            .then(() => console.log('✅ VOICE CHAT: Audio resumed after user interaction'))
+            .catch(e => console.error('Retry play failed:', e));
+        };
+        document.addEventListener('click', retryPlay, { once: true });
+        document.addEventListener('touchstart', retryPlay, { once: true });
+      });
+  }
 }
 
+/**
+ * Called ONLY by the answerer (isPlayer2) when the OFFER message arrives.
+ */
 async function handleOffer(message) {
-  console.log('📬 VOICE CHAT: Received offer (answerer mode)');
+  console.log('📬 VOICE CHAT [ANSWERER]: Received offer');
   
   try {
-    // Step 1: Get microphone
+    // Step 1: Get microphone (answerer didn't call initializeVoiceChat)
     if (!voiceState.localStream) {
-      console.log('🎤 VOICE CHAT: Answerer requesting microphone...');
       voiceState.localStream = await navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: true,
@@ -420,88 +440,167 @@ async function handleOffer(message) {
         },
         video: false
       });
-      console.log('✅ VOICE CHAT: Answerer microphone granted');
+      console.log('✅ VOICE CHAT [ANSWERER]: Microphone access granted');
+      updateLocalIndicator(true);
     }
     
-    // Step 2: Create peer connection
+    // Step 2: Create peer connection (only if not already created)
     if (!voiceState.peerConnection) {
-      console.log('🔌 VOICE CHAT: Answerer creating RTCPeerConnection...');
       voiceState.peerConnection = new RTCPeerConnection(RTCConfig);
       voiceState.isCaller = false;
       
-      // Step 3: Add local tracks
-      console.log('📍 VOICE CHAT: Answerer adding local audio tracks...');
+      // Add local tracks
       voiceState.localStream.getAudioTracks().forEach(track => {
         voiceState.peerConnection.addTrack(track, voiceState.localStream);
       });
-      console.log('✅ VOICE CHAT: Answerer local tracks added');
       
-      // Step 4: Setup event handlers
       setupVoiceChatHandlers();
     }
     
-    // Step 5: Set remote description (the offer)
-    console.log('📍 VOICE CHAT: Answerer setting remote description...');
+    // Step 3: Set remote description (the offer)
     await voiceState.peerConnection.setRemoteDescription(
       new RTCSessionDescription(message.offer)
     );
-    console.log('✅ VOICE CHAT: Remote description set');
+    console.log('✅ VOICE CHAT [ANSWERER]: Remote description set');
     
-    // Step 6: Create and send answer
-    console.log('📤 VOICE CHAT: Answerer creating answer...');
+    // Step 4: Flush any buffered ICE candidates now that remoteDescription is set
+    flushICECandidateBuffer();
+    
+    // Step 5: Create and send answer
     const answer = await voiceState.peerConnection.createAnswer();
     await voiceState.peerConnection.setLocalDescription(answer);
-    console.log('✅ VOICE CHAT: Answer created, sending to caller...');
+    console.log('📤 VOICE CHAT [ANSWERER]: Answer created, sending...');
     
     sendMessage({
       type: 'ANSWER',
-      answer: answer
+      answer: voiceState.peerConnection.localDescription
     });
     
-    console.log('✅ VOICE CHAT: Answer sent');
+    startAudioLevelMonitor();
+    console.log('✅ VOICE CHAT [ANSWERER]: Initialization complete');
     
   } catch (error) {
-    console.error('❌ VOICE CHAT: Error handling offer:', error);
+    console.error('❌ VOICE CHAT [ANSWERER]: Error handling offer:', error);
   }
 }
 
+/**
+ * Called by the caller (isPlayer1) when the ANSWER message arrives.
+ */
 async function handleAnswer(message) {
-  console.log('📬 VOICE CHAT: Received answer (caller)');
+  console.log('📬 VOICE CHAT [CALLER]: Received answer');
   
   try {
-    console.log('📍 VOICE CHAT: Setting remote description with answer...');
-    await voiceState.peerConnection.setRemoteDescription(
-      new RTCSessionDescription(message.answer)
-    );
-    console.log('✅ VOICE CHAT: Answer set, connection should establish soon');
-    
-  } catch (error) {
-    console.error('❌ VOICE CHAT: Error handling answer:', error);
-  }
-}
-
-async function handleICECandidate(message) {
-  try {
     if (!voiceState.peerConnection) {
-      console.warn('⚠️ VOICE CHAT: Received ICE candidate but no peer connection');
+      console.error('❌ VOICE CHAT [CALLER]: No peer connection when answer arrived');
       return;
     }
     
-    console.log('🧊 VOICE CHAT: Adding ICE candidate');
+    await voiceState.peerConnection.setRemoteDescription(
+      new RTCSessionDescription(message.answer)
+    );
+    console.log('✅ VOICE CHAT [CALLER]: Remote description set, connection establishing...');
+    
+    // Flush any buffered ICE candidates now that remoteDescription is set
+    flushICECandidateBuffer();
+    
+  } catch (error) {
+    console.error('❌ VOICE CHAT [CALLER]: Error handling answer:', error);
+  }
+}
+
+/**
+ * Buffer ICE candidates if peer connection isn't ready yet,
+ * otherwise add them directly.
+ */
+async function handleICECandidate(message) {
+  try {
+    // If no peer connection or no remote description yet, buffer the candidate
+    if (!voiceState.peerConnection || !voiceState.peerConnection.remoteDescription) {
+      console.log('🧊 VOICE CHAT: Buffering ICE candidate (PC not ready)');
+      voiceState.iceCandidateBuffer.push(message.candidate);
+      return;
+    }
+    
     await voiceState.peerConnection.addIceCandidate(
       new RTCIceCandidate(message.candidate)
     );
     
   } catch (error) {
-    // Ignore errors - ICE candidates can fail sometimes
-    if (error.code !== 'InvalidStateError') {
-      console.warn('⚠️ VOICE CHAT: ICE candidate error:', error.message);
+    // Non-fatal — some candidates just don't work
+    console.warn('⚠️ VOICE CHAT: ICE candidate error:', error.message);
+  }
+}
+
+/**
+ * Flush buffered ICE candidates once the peer connection and
+ * remote description are both ready.
+ */
+async function flushICECandidateBuffer() {
+  if (!voiceState.peerConnection || !voiceState.peerConnection.remoteDescription) return;
+  
+  const buffered = voiceState.iceCandidateBuffer.splice(0);
+  if (buffered.length > 0) {
+    console.log(`🧊 VOICE CHAT: Flushing ${buffered.length} buffered ICE candidates`);
+  }
+  for (const candidate of buffered) {
+    try {
+      await voiceState.peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+    } catch (e) {
+      console.warn('⚠️ VOICE CHAT: Buffered ICE candidate error:', e.message);
     }
   }
 }
 
+/**
+ * Visual indicator helpers
+ */
+function updateLocalIndicator(active) {
+  const el = document.getElementById('local-audio-indicator');
+  if (el) el.classList.toggle('active', active);
+}
+
+function updateRemoteIndicator(active) {
+  const el = document.getElementById('remote-audio-indicator');
+  if (el) el.classList.toggle('active', active);
+}
+
+/**
+ * Periodically check audio levels so the indicators pulse.
+ */
+function startAudioLevelMonitor() {
+  // Clear any previous monitor
+  if (voiceState.audioLevelInterval) {
+    clearInterval(voiceState.audioLevelInterval);
+  }
+  
+  voiceState.audioLevelInterval = setInterval(() => {
+    // Update local indicator based on whether mic track is enabled
+    if (voiceState.localStream) {
+      const tracks = voiceState.localStream.getAudioTracks();
+      const anyEnabled = tracks.some(t => t.enabled && t.readyState === 'live');
+      updateLocalIndicator(anyEnabled);
+    } else {
+      updateLocalIndicator(false);
+    }
+    
+    // Update remote indicator based on connection state
+    if (voiceState.peerConnection) {
+      const connected = voiceState.peerConnection.connectionState === 'connected';
+      updateRemoteIndicator(connected && voiceState.remoteStream !== null);
+    } else {
+      updateRemoteIndicator(false);
+    }
+  }, 1000);
+}
+
 function cleanupVoiceChat() {
   console.log('🧹 VOICE CHAT: Cleaning up...');
+  
+  if (voiceState.audioLevelInterval) {
+    clearInterval(voiceState.audioLevelInterval);
+    voiceState.audioLevelInterval = null;
+  }
   
   if (voiceState.localStream) {
     voiceState.localStream.getTracks().forEach(track => track.stop());
@@ -514,11 +613,15 @@ function cleanupVoiceChat() {
   }
   
   voiceState.remoteStream = null;
+  voiceState.iceCandidateBuffer = [];
   
   const remoteAudio = document.getElementById('remote-audio');
   if (remoteAudio) {
     remoteAudio.srcObject = null;
   }
+  
+  updateLocalIndicator(false);
+  updateRemoteIndicator(false);
   
   console.log('✅ VOICE CHAT: Cleaned up');
 }
