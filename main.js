@@ -256,128 +256,121 @@ function handleGameMove(message) {
    }
  }
 
-async function initializeVoiceChat() {
-   try {
-     // Get local media FIRST
-     console.log('📱 Requesting microphone...');
-     localStream = await navigator.mediaDevices.getUserMedia({ 
-       audio: {
-         echoCancellation: true,
-         noiseSuppression: true,
-         autoGainControl: true
-       },
-       video: false 
-     });
-     
-     console.log('✅ Microphone granted');
-     localStream.getAudioTracks().forEach(track => {
-       console.log('  📍 Track:', track.kind, 'ID:', track.id, 'Enabled:', track.enabled);
-     });
-     
-     // THEN create peer connection
-     const configuration = {
-       iceServers: [
-         { urls: 'stun:stun.l.google.com:19302' },
-         { urls: 'stun:stun1.l.google.com:19302' },
-         { urls: 'stun:stun2.l.google.com:19302' },
-         { urls: 'stun:global.stun.twilio.com:3478' },
-         { urls: 'stun:openrelay.metered.ca:443' },
-         { 
-           urls: 'turn:openrelay.metered.ca:443',
-           username: 'openrelayproject',
-           credential: 'openrelayproject'
-         }
-       ]
-     };
-     
-     console.log('🔌 Creating peer connection...');
-     peerConnection = new RTCPeerConnection(configuration);
-     
-     // Set up event handlers BEFORE adding tracks
-     setupPeerConnectionHandlers();
-     
-     // ADD TRACKS BEFORE CREATING OFFER
-     console.log('🎤 Adding audio tracks...');
-     const audioTracks = localStream.getAudioTracks();
-     audioTracks.forEach((track, idx) => {
-       console.log(`  Adding track ${idx}: ${track.kind}`);
-       peerConnection.addTrack(track, localStream);
-     });
-     
-     console.log('✅ Tracks added. Senders:', peerConnection.getSenders().length);
-     
-     // NOW create offer
-     console.log('📤 Creating offer...');
-     const offer = await peerConnection.createOffer({
-       offerToReceiveAudio: true,
-       offerToReceiveVideo: false
-     });
-     console.log('✅ Offer created');
-     
-     // Set local description
-     console.log('📍 Setting local description...');
-     await peerConnection.setLocalDescription(offer);
-     console.log('✅ Local description set');
-     
-     // Send offer
-     console.log('📬 Sending offer...');
-     sendMessage({
-       type: 'OFFER',
-       offer: offer
-     });
-     
-     console.log('✅ Voice chat initialized');
-     
-   } catch (error) {
-     console.error('❌ Error initializing voice chat:', error);
-     alert('Failed to access microphone. Please check permissions.');
-   }
- }
+// ============================================================
+// VOICE CHAT - COMPLETE REIMPLEMENTATION
+// ============================================================
 
-function setupPeerConnectionHandlers() {
-  console.log('⚙️ Setting up peer connection handlers...');
+// Voice chat state
+let voiceState = {
+  localStream: null,
+  remoteStream: null,
+  peerConnection: null,
+  isCaller: false
+};
+
+const STUN_SERVERS = [
+  'stun:stun.l.google.com:19302',
+  'stun:stun1.l.google.com:19302',
+  'stun:stun2.l.google.com:19302',
+  'stun:global.stun.twilio.com:3478'
+];
+
+const RTCConfig = {
+  iceServers: [
+    ...STUN_SERVERS.map(url => ({ urls: url })),
+    {
+      urls: 'turn:openrelay.metered.ca:443',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    }
+  ]
+};
+
+async function initializeVoiceChat() {
+  console.log('🎤 VOICE CHAT: Starting initialization...');
   
-  // Handle incoming remote track
-  peerConnection.ontrack = (event) => {
-    console.log('🎵 ONTRACK EVENT FIRED');
-    console.log('  Track:', event.track.kind, 'ID:', event.track.id);
-    console.log('  Enabled:', event.track.enabled);
-    console.log('  Streams:', event.streams.length);
+  try {
+    // Step 1: Get microphone
+    console.log('🎤 VOICE CHAT: Requesting microphone access...');
+    voiceState.localStream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true
+      },
+      video: false
+    });
+    console.log('✅ VOICE CHAT: Microphone access granted');
+    
+    // Step 2: Create peer connection
+    console.log('🔌 VOICE CHAT: Creating RTCPeerConnection...');
+    voiceState.peerConnection = new RTCPeerConnection(RTCConfig);
+    voiceState.isCaller = true;
+    
+    // Step 3: Add local tracks
+    console.log('📍 VOICE CHAT: Adding local audio tracks...');
+    voiceState.localStream.getAudioTracks().forEach(track => {
+      voiceState.peerConnection.addTrack(track, voiceState.localStream);
+    });
+    console.log('✅ VOICE CHAT: Local tracks added');
+    
+    // Step 4: Setup event handlers
+    setupVoiceChatHandlers();
+    
+    // Step 5: Create and send offer
+    console.log('📤 VOICE CHAT: Creating offer...');
+    const offer = await voiceState.peerConnection.createOffer();
+    await voiceState.peerConnection.setLocalDescription(offer);
+    console.log('✅ VOICE CHAT: Offer created, sending to partner...');
+    
+    sendMessage({
+      type: 'OFFER',
+      offer: offer
+    });
+    
+    console.log('✅ VOICE CHAT: Initialization complete');
+    
+  } catch (error) {
+    console.error('❌ VOICE CHAT: Initialization failed:', error);
+    alert('Microphone access denied. Please check permissions.');
+  }
+}
+
+function setupVoiceChatHandlers() {
+  console.log('⚙️ VOICE CHAT: Setting up event handlers...');
+  
+  const pc = voiceState.peerConnection;
+  
+  // When we receive a remote audio track
+  pc.ontrack = (event) => {
+    console.log('🎵 VOICE CHAT: Received remote audio track');
+    console.log('   Track:', event.track.kind, 'ID:', event.track.id);
+    console.log('   Streams:', event.streams.length);
     
     if (event.streams && event.streams.length > 0) {
-      remoteStream = event.streams[0];
-      console.log('  ✅ Remote stream set, audio tracks:', remoteStream.getAudioTracks().length);
-      
-      // Play remote audio
-      const remoteAudio = document.getElementById('remote-audio');
-      if (remoteAudio) {
-        remoteAudio.srcObject = remoteStream;
-        remoteAudio.muted = false;
-        
-        remoteAudio.play()
-          .then(() => console.log('  ✅ Remote audio playing'))
-          .catch(e => console.error('  ❌ Play failed:', e.message));
-      }
+      voiceState.remoteStream = event.streams[0];
+      playRemoteAudio();
     }
   };
   
-  // Connection state
-  peerConnection.onconnectionstatechange = () => {
-    console.log('📡 Connection state:', peerConnection.connectionState);
+  // Connection state changes
+  pc.onconnectionstatechange = () => {
+    const state = pc.connectionState;
+    console.log('📡 VOICE CHAT: Connection state:', state);
+    
+    if (state === 'failed' || state === 'disconnected' || state === 'closed') {
+      console.error('❌ VOICE CHAT: Connection lost');
+    }
   };
   
-  peerConnection.oniceconnectionstatechange = () => {
-    console.log('🧊 ICE state:', peerConnection.iceConnectionState);
-  };
-  
-  peerConnection.onicegatheringstatechange = () => {
-    console.log('🧊 ICE gathering:', peerConnection.iceGatheringState);
+  pc.oniceconnectionstatechange = () => {
+    console.log('🧊 VOICE CHAT: ICE state:', pc.iceConnectionState);
   };
   
   // Send ICE candidates
-  peerConnection.onicecandidate = (event) => {
+  pc.onicecandidate = (event) => {
     if (event.candidate) {
-      console.log('📤 Sending ICE candidate');
+      console.log('📤 VOICE CHAT: Sending ICE candidate');
       sendMessage({
         type: 'ICE_CANDIDATE',
         candidate: event.candidate
@@ -386,179 +379,148 @@ function setupPeerConnectionHandlers() {
   };
 }
 
+function playRemoteAudio() {
+  console.log('🔊 VOICE CHAT: Setting up remote audio playback...');
+  
+  const remoteAudio = document.getElementById('remote-audio');
+  if (!remoteAudio) {
+    console.error('❌ VOICE CHAT: Remote audio element not found');
+    return;
+  }
+  
+  remoteAudio.srcObject = voiceState.remoteStream;
+  remoteAudio.muted = false;
+  
+  // Try to play
+  remoteAudio.play()
+    .then(() => {
+      console.log('✅ VOICE CHAT: Remote audio is playing');
+    })
+    .catch(err => {
+      console.error('❌ VOICE CHAT: Could not play remote audio:', err.message);
+      // Retry after user interaction
+      document.addEventListener('click', () => {
+        remoteAudio.play().catch(e => console.error('Retry failed:', e));
+      }, { once: true });
+    });
+}
+
 async function handleOffer(message) {
-   try {
-     console.log('📬 Received offer (answerer)');
-     
-     if (!peerConnection) {
-       // Get local media first
-       if (!localStream) {
-         console.log('📱 Answerer requesting microphone...');
-         localStream = await navigator.mediaDevices.getUserMedia({ 
-           audio: {
-             echoCancellation: true,
-             noiseSuppression: true,
-             autoGainControl: true
-           },
-           video: false 
-         });
-         console.log('✅ Answerer microphone granted');
-       }
-       
-       const configuration = {
-         iceServers: [
-           { urls: 'stun:stun.l.google.com:19302' },
-           { urls: 'stun:stun1.l.google.com:19302' },
-           { urls: 'stun:stun2.l.google.com:19302' },
-           { urls: 'stun:global.stun.twilio.com:3478' },
-           { urls: 'stun:openrelay.metered.ca:443' },
-           { 
-             urls: 'turn:openrelay.metered.ca:443',
-             username: 'openrelayproject',
-             credential: 'openrelayproject'
-           }
-         ]
-       };
-       
-       console.log('🔌 Answerer creating peer connection...');
-       peerConnection = new RTCPeerConnection(configuration);
-       
-       // Set up handlers BEFORE adding tracks
-       setupPeerConnectionHandlers();
-       
-       // Add tracks BEFORE setting remote description
-       console.log('🎤 Answerer adding audio tracks...');
-       localStream.getAudioTracks().forEach((track, idx) => {
-         console.log(`  Adding track ${idx}: ${track.kind}`);
-         peerConnection.addTrack(track, localStream);
-       });
-       console.log('✅ Answerer tracks added');
-     }
-     
-     // Set remote description
-     console.log('📍 Answerer setting remote description...');
-     await peerConnection.setRemoteDescription(
-       new RTCSessionDescription(message.offer)
-     );
-     console.log('✅ Answerer remote description set');
-     
-     // Create answer
-     console.log('📤 Answerer creating answer...');
-     const answer = await peerConnection.createAnswer({
-       offerToReceiveAudio: true,
-       offerToReceiveVideo: false
-     });
-     console.log('✅ Answerer answer created');
-     
-     // Set local description
-     console.log('📍 Answerer setting local description...');
-     await peerConnection.setLocalDescription(answer);
-     console.log('✅ Answerer local description set');
-     
-     // Send answer
-     console.log('📬 Answerer sending answer...');
-     sendMessage({
-       type: 'ANSWER',
-       answer: answer
-     });
-     console.log('✅ Answerer sent answer');
-     
-   } catch (error) {
-     console.error('❌ Error handling offer:', error);
-   }
- }
+  console.log('📬 VOICE CHAT: Received offer (answerer mode)');
+  
+  try {
+    // Step 1: Get microphone
+    if (!voiceState.localStream) {
+      console.log('🎤 VOICE CHAT: Answerer requesting microphone...');
+      voiceState.localStream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        },
+        video: false
+      });
+      console.log('✅ VOICE CHAT: Answerer microphone granted');
+    }
+    
+    // Step 2: Create peer connection
+    if (!voiceState.peerConnection) {
+      console.log('🔌 VOICE CHAT: Answerer creating RTCPeerConnection...');
+      voiceState.peerConnection = new RTCPeerConnection(RTCConfig);
+      voiceState.isCaller = false;
+      
+      // Step 3: Add local tracks
+      console.log('📍 VOICE CHAT: Answerer adding local audio tracks...');
+      voiceState.localStream.getAudioTracks().forEach(track => {
+        voiceState.peerConnection.addTrack(track, voiceState.localStream);
+      });
+      console.log('✅ VOICE CHAT: Answerer local tracks added');
+      
+      // Step 4: Setup event handlers
+      setupVoiceChatHandlers();
+    }
+    
+    // Step 5: Set remote description (the offer)
+    console.log('📍 VOICE CHAT: Answerer setting remote description...');
+    await voiceState.peerConnection.setRemoteDescription(
+      new RTCSessionDescription(message.offer)
+    );
+    console.log('✅ VOICE CHAT: Remote description set');
+    
+    // Step 6: Create and send answer
+    console.log('📤 VOICE CHAT: Answerer creating answer...');
+    const answer = await voiceState.peerConnection.createAnswer();
+    await voiceState.peerConnection.setLocalDescription(answer);
+    console.log('✅ VOICE CHAT: Answer created, sending to caller...');
+    
+    sendMessage({
+      type: 'ANSWER',
+      answer: answer
+    });
+    
+    console.log('✅ VOICE CHAT: Answer sent');
+    
+  } catch (error) {
+    console.error('❌ VOICE CHAT: Error handling offer:', error);
+  }
+}
 
 async function handleAnswer(message) {
+  console.log('📬 VOICE CHAT: Received answer (caller)');
+  
   try {
-    console.log('Received answer, setting remote description');
-    await peerConnection.setRemoteDescription(
+    console.log('📍 VOICE CHAT: Setting remote description with answer...');
+    await voiceState.peerConnection.setRemoteDescription(
       new RTCSessionDescription(message.answer)
     );
-    console.log('Remote description set from answer - connection should now be established');
+    console.log('✅ VOICE CHAT: Answer set, connection should establish soon');
+    
   } catch (error) {
-    console.error('Error handling answer:', error);
+    console.error('❌ VOICE CHAT: Error handling answer:', error);
   }
 }
 
 async function handleICECandidate(message) {
   try {
-    console.log('Received ICE candidate, adding to peer connection');
-    await peerConnection.addIceCandidate(
-      new RTCIceCandidate(message.candidate)
-    );
-    console.log('ICE candidate added - waiting for connection');
-  } catch (error) {
-    console.error('Error adding ICE candidate:', error);
-  }
-}
-
-function monitorLocalAudio() {
-  try {
-    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-    const analyser = audioContext.createAnalyser();
-    const microphone = audioContext.createMediaStreamSource(localStream);
-    const dataArray = new Uint8Array(analyser.frequencyBinCount);
-    
-    microphone.connect(analyser);
-    analyser.smoothingTimeConstant = 0.8;
-    analyser.fftSize = 1024;
-    
-    const indicator = document.getElementById('local-audio-indicator');
-    
-    function check() {
-      analyser.getByteFrequencyData(dataArray);
-      const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
-      
-      if (average > 30) {
-        indicator.classList.add('active');
-      } else {
-        indicator.classList.remove('active');
-      }
-      
-      requestAnimationFrame(check);
-    }
-    
-    check();
-  } catch (error) {
-    console.error('Error monitoring local audio:', error);
-  }
-}
-
-function updateRemoteAudioIndicator() {
-  try {
-    if (!remoteStream) {
-      console.log('No remote stream yet');
+    if (!voiceState.peerConnection) {
+      console.warn('⚠️ VOICE CHAT: Received ICE candidate but no peer connection');
       return;
     }
-
-    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-    const analyser = audioContext.createAnalyser();
-    const microphone = audioContext.createMediaStreamSource(remoteStream);
-    const dataArray = new Uint8Array(analyser.frequencyBinCount);
     
-    microphone.connect(analyser);
-    analyser.smoothingTimeConstant = 0.8;
-    analyser.fftSize = 1024;
+    console.log('🧊 VOICE CHAT: Adding ICE candidate');
+    await voiceState.peerConnection.addIceCandidate(
+      new RTCIceCandidate(message.candidate)
+    );
     
-    const indicator = document.getElementById('remote-audio-indicator');
-    
-    function check() {
-      analyser.getByteFrequencyData(dataArray);
-      const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
-      
-      if (average > 30) {
-        indicator.classList.add('active');
-      } else {
-        indicator.classList.remove('active');
-      }
-      
-      requestAnimationFrame(check);
-    }
-    
-    check();
   } catch (error) {
-    console.error('Error monitoring remote audio:', error);
+    // Ignore errors - ICE candidates can fail sometimes
+    if (error.code !== 'InvalidStateError') {
+      console.warn('⚠️ VOICE CHAT: ICE candidate error:', error.message);
+    }
   }
+}
+
+function cleanupVoiceChat() {
+  console.log('🧹 VOICE CHAT: Cleaning up...');
+  
+  if (voiceState.localStream) {
+    voiceState.localStream.getTracks().forEach(track => track.stop());
+    voiceState.localStream = null;
+  }
+  
+  if (voiceState.peerConnection) {
+    voiceState.peerConnection.close();
+    voiceState.peerConnection = null;
+  }
+  
+  voiceState.remoteStream = null;
+  
+  const remoteAudio = document.getElementById('remote-audio');
+  if (remoteAudio) {
+    remoteAudio.srcObject = null;
+  }
+  
+  console.log('✅ VOICE CHAT: Cleaned up');
 }
 
 function handlePartnerLeft() {
@@ -602,8 +564,8 @@ document.getElementById('start-game-btn').addEventListener('click', () => {
 });
 
 document.getElementById('toggle-microphone').addEventListener('click', (e) => {
-  if (localStream) {
-    const audioTracks = localStream.getAudioTracks();
+  if (voiceState.localStream) {
+    const audioTracks = voiceState.localStream.getAudioTracks();
     audioTracks.forEach(track => {
       track.enabled = !track.enabled;
       microphoneEnabled = track.enabled;
@@ -630,22 +592,8 @@ document.getElementById('leave-game-btn').addEventListener('click', () => {
 });
 
 function cleanup() {
-  if (localStream) {
-    localStream.getTracks().forEach(track => track.stop());
-    localStream = null;
-  }
+  cleanupVoiceChat();
   
-  if (peerConnection) {
-    peerConnection.close();
-    peerConnection = null;
-  }
-  
-  if (remoteStream) {
-    remoteStream.getTracks().forEach(track => track.stop());
-    remoteStream = null;
-  }
-  
-  document.getElementById('remote-audio').srcObject = null;
   pairId = null;
   partnerId = null;
   gameId = null;
