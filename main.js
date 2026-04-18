@@ -307,22 +307,36 @@ async function initializeVoiceChat() {
        console.log('PeerConnection state:', peerConnection.connectionState);
      };
      
-     // Handle remote stream
-     peerConnection.ontrack = (event) => {
-       console.log('Received remote track:', event.track.kind);
-       remoteStream = event.streams[0];
-       const remoteAudio = document.getElementById('remote-audio');
-       remoteAudio.srcObject = remoteStream;
-       
-       // Explicitly play the audio - browsers require this
-       remoteAudio.play().then(() => {
-         console.log('Remote audio playing');
-       }).catch(error => {
-         console.error('Failed to play remote audio:', error);
-       });
-       
-       updateRemoteAudioIndicator();
-     };
+      // Handle remote stream
+      peerConnection.ontrack = (event) => {
+        console.log('Received remote track:', event.track.kind, 'Track enabled:', event.track.enabled);
+        remoteStream = event.streams[0];
+        console.log('Remote stream received:', remoteStream, 'Audio tracks:', remoteStream.getAudioTracks().length);
+        
+        const remoteAudio = document.getElementById('remote-audio');
+        console.log('Remote audio element:', remoteAudio);
+        console.log('Remote audio element attributes - autoplay:', remoteAudio.autoplay, 'muted:', remoteAudio.muted);
+        
+        remoteAudio.srcObject = remoteStream;
+        remoteAudio.muted = false; // Ensure audio is not muted
+        console.log('Remote audio srcObject set to:', remoteAudio.srcObject, 'muted:', remoteAudio.muted);
+        
+        // Try to play the audio
+        const playPromise = remoteAudio.play();
+        if (playPromise !== undefined) {
+          playPromise.then(() => {
+            console.log('Remote audio playing successfully');
+          }).catch(error => {
+            console.error('Failed to play remote audio:', error);
+            // Try again after a short delay
+            setTimeout(() => {
+              remoteAudio.play().catch(err => console.error('Retry play failed:', err));
+            }, 100);
+          });
+        }
+        
+        updateRemoteAudioIndicator();
+      };
      
      // Handle ICE candidates
      peerConnection.onicecandidate = (event) => {
@@ -395,21 +409,35 @@ async function handleOffer(message) {
          peerConnection.addTrack(track, localStream);
        });
        
-       peerConnection.ontrack = (event) => {
-         console.log('Answerer: Received remote track:', event.track.kind);
-         remoteStream = event.streams[0];
-         const remoteAudio = document.getElementById('remote-audio');
-         remoteAudio.srcObject = remoteStream;
-         
-         // Explicitly play the audio - browsers require this
-         remoteAudio.play().then(() => {
-           console.log('Answerer: Remote audio playing');
-         }).catch(error => {
-           console.error('Answerer: Failed to play remote audio:', error);
-         });
-         
-         updateRemoteAudioIndicator();
-       };
+        peerConnection.ontrack = (event) => {
+          console.log('Answerer: Received remote track:', event.track.kind, 'Track enabled:', event.track.enabled);
+          remoteStream = event.streams[0];
+          console.log('Answerer: Remote stream received:', remoteStream, 'Audio tracks:', remoteStream.getAudioTracks().length);
+          
+          const remoteAudio = document.getElementById('remote-audio');
+          console.log('Answerer: Remote audio element:', remoteAudio);
+          console.log('Answerer: Remote audio element attributes - autoplay:', remoteAudio.autoplay, 'muted:', remoteAudio.muted);
+          
+          remoteAudio.srcObject = remoteStream;
+          remoteAudio.muted = false; // Ensure audio is not muted
+          console.log('Answerer: Remote audio srcObject set to:', remoteAudio.srcObject, 'muted:', remoteAudio.muted);
+          
+          // Try to play the audio
+          const playPromise = remoteAudio.play();
+          if (playPromise !== undefined) {
+            playPromise.then(() => {
+              console.log('Answerer: Remote audio playing successfully');
+            }).catch(error => {
+              console.error('Answerer: Failed to play remote audio:', error);
+              // Try again after a short delay
+              setTimeout(() => {
+                remoteAudio.play().catch(err => console.error('Answerer: Retry play failed:', err));
+              }, 100);
+            });
+          }
+          
+          updateRemoteAudioIndicator();
+        };
        
        peerConnection.onicecandidate = (event) => {
          if (event.candidate) {
