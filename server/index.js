@@ -15,6 +15,44 @@ const wss = new WebSocketServer({ server });
 app.use(express.static(path.join(__dirname, '../dist')));
 app.use(express.json());
 
+// CORS - needed because Vercel frontend calls Render backend API
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Headers', 'Content-Type');
+  next();
+});
+
+// ICE server configuration endpoint
+// Returns STUN + TURN servers. TURN credentials come from environment variables.
+app.get('/api/ice-servers', (req, res) => {
+  const iceServers = [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:global.stun.twilio.com:3478' },
+  ];
+
+  // Add TURN server if credentials are configured via env vars
+  const turnUrls = process.env.TURN_URLS;
+  const turnUsername = process.env.TURN_USERNAME;
+  const turnCredential = process.env.TURN_CREDENTIAL;
+
+  if (turnUrls && turnUsername && turnCredential) {
+    // Support comma-separated TURN URLs
+    const urls = turnUrls.split(',').map(u => u.trim());
+    iceServers.push({
+      urls,
+      username: turnUsername,
+      credential: turnCredential
+    });
+    console.log('TURN server configured:', urls);
+  } else {
+    console.log('No TURN server configured - cross-network voice chat may not work');
+  }
+
+  res.json({ iceServers });
+});
+
 // Game types available
 const GAMES = [
   'Tic Tac Toe',

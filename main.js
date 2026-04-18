@@ -21,10 +21,16 @@ const SIGNALING_SERVER = window.location.hostname === 'localhost'
       ? `wss://kazzywazzy.onrender.com` 
       : `ws://kazzywazzy.onrender.com:10000`);
 
+// Base URL for REST API calls (same server as WebSocket)
+const API_BASE = window.location.hostname === 'localhost'
+  ? ''  // same origin on localhost
+  : 'https://kazzywazzy.onrender.com';
+
 console.log('Environment:', {
   hostname: window.location.hostname,
   protocol: window.location.protocol,
-  SIGNALING_SERVER
+  SIGNALING_SERVER,
+  API_BASE
 });
 
 // Screen management
@@ -275,19 +281,41 @@ let voiceState = {
   audioLevelInterval: null
 };
 
-const RTCConfig = {
-  iceServers: [
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' },
-    { urls: 'stun:stun2.l.google.com:19302' },
-    { urls: 'stun:global.stun.twilio.com:3478' },
-    {
-      urls: 'turn:openrelay.metered.ca:443',
-      username: 'openrelayproject',
-      credential: 'openrelayproject'
-    }
-  ]
-};
+// Cached ICE server config — fetched once from the backend
+let cachedICEConfig = null;
+
+/**
+ * Fetch ICE server configuration (STUN + TURN) from the backend.
+ * TURN credentials are stored as env vars on the server for security.
+ */
+async function fetchICEServers() {
+  if (cachedICEConfig) return cachedICEConfig;
+
+  try {
+    const response = await fetch(`${API_BASE}/api/ice-servers`);
+    const data = await response.json();
+    cachedICEConfig = {
+      iceServers: data.iceServers,
+      iceCandidatePoolSize: 2
+    };
+    const hasTurn = data.iceServers.some(s => {
+      const urls = Array.isArray(s.urls) ? s.urls : [s.urls];
+      return urls.some(u => u.startsWith('turn:') || u.startsWith('turns:'));
+    });
+    console.log(`✅ ICE config fetched: ${data.iceServers.length} servers, TURN: ${hasTurn ? 'YES' : 'NO (cross-network may fail)'}`);
+    return cachedICEConfig;
+  } catch (error) {
+    console.warn('⚠️ Failed to fetch ICE servers, using STUN-only fallback:', error.message);
+    cachedICEConfig = {
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+      ],
+      iceCandidatePoolSize: 2
+    };
+    return cachedICEConfig;
+  }
+}
 
 /**
  * Called ONLY by the caller (isPlayer1).
@@ -310,8 +338,9 @@ async function initializeVoiceChat() {
     console.log('✅ VOICE CHAT [CALLER]: Microphone access granted');
     updateLocalIndicator(true);
     
-    // Step 2: Create peer connection
-    voiceState.peerConnection = new RTCPeerConnection(RTCConfig);
+    // Step 2: Create peer connection with dynamically fetched ICE config
+    const rtcConfig = await fetchICEServers();
+    voiceState.peerConnection = new RTCPeerConnection(rtcConfig);
     voiceState.isCaller = true;
     
     // Step 3: Add local tracks BEFORE creating offer
@@ -446,7 +475,8 @@ async function handleOffer(message) {
     
     // Step 2: Create peer connection (only if not already created)
     if (!voiceState.peerConnection) {
-      voiceState.peerConnection = new RTCPeerConnection(RTCConfig);
+      const rtcConfig = await fetchICEServers();
+      voiceState.peerConnection = new RTCPeerConnection(rtcConfig);
       voiceState.isCaller = false;
       
       // Add local tracks
