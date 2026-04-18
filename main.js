@@ -256,210 +256,205 @@ function handleGameMove(message) {
  }
 
 async function initializeVoiceChat() {
-  try {
-    // Get local media
-    localStream = await navigator.mediaDevices.getUserMedia({ 
-      audio: true, 
-      video: false 
-    });
-    
-    console.log('Local stream acquired:', localStream.getTracks());
-    
-// Initialize WebRTC peer connection
-    const configuration = {
-      iceServers: [
-        // STUN servers - for NAT traversal
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' },
-        { urls: 'stun:stun2.l.google.com:19302' },
-        { urls: 'stun:global.stun.twilio.com:3478' },
-        { urls: 'stun:openrelay.metered.ca:443' },
-        // TURN server - for when STUN fails (free, no auth needed)
-        { 
-          urls: 'turn:openrelay.metered.ca:443',
-          username: 'openrelayproject',
-          credential: 'openrelayproject'
-        }
-      ],
-      iceCandidatePoolSize: 10
-    };
-    
-    console.log('Creating RTCPeerConnection with TURN server:', configuration.iceServers.map(s => s.urls).join(', '));
-    
-    peerConnection = new RTCPeerConnection(configuration);
-    
-    // Set up handlers BEFORE creating offer
-    peerConnection.oniceconnectionstatechange = () => {
-      console.log('ICE Connection State:', peerConnection.iceConnectionState);
-    };
-    
-    peerConnection.onicegatheringstatechange = () => {
-      console.log('ICE Gathering State:', peerConnection.iceGatheringState);
-    };
-    
-    // Handle ICE candidates - store them if remote not set yet
-    let pendingIceCandidates = [];
-    
-    peerConnection.onicecandidate = (event) => {
-      if (event.candidate) {
-        console.log('Sending ICE candidate:', event.candidate);
-        sendMessage({
-          type: 'ICE_CANDIDATE',
-          candidate: event.candidate
-        });
-      }
-    };
-    
-    console.log('RTCPeerConnection ready with TURN server');
-    
-    peerConnection = new RTCPeerConnection(configuration);
-    
-    peerConnection.oniceconnectionstatechange = () => {
-      console.log('ICE Connection State:', peerConnection.iceConnectionState);
-    };
-    
-    peerConnection.onicegatheringstatechange = () => {
-      console.log('ICE Gathering State:', peerConnection.iceGatheringState);
-    };
-    
-    // Add local stream to peer connection
-    localStream.getTracks().forEach(track => {
-      console.log('Adding local track:', track.kind);
-      peerConnection.addTrack(track, localStream);
-    });
-    
-    // Handle remote stream
-    peerConnection.ontrack = (event) => {
-      console.log('Received remote track:', event.track.kind);
-      remoteStream = event.streams[0];
-      const remoteAudio = document.getElementById('remote-audio');
-      remoteAudio.srcObject = remoteStream;
-      
-      // Explicitly play the audio - browsers require this
-      remoteAudio.play().then(() => {
-        console.log('Remote audio playing');
-      }).catch(error => {
-        console.error('Failed to play remote audio:', error);
-      });
-      
-      updateRemoteAudioIndicator();
-    };
-    
-    // Handle ICE candidates
-    peerConnection.onicecandidate = (event) => {
-      if (event.candidate) {
-        console.log('Sending ICE candidate');
-        sendMessage({
-          type: 'ICE_CANDIDATE',
-          candidate: event.candidate
-        });
-      }
-    };
-    
-    peerConnection.onconnectionstatechange = () => {
-      console.log('PeerConnection state:', peerConnection.connectionState);
-    };
-    
-    // Create and send offer
-    const offer = await peerConnection.createOffer();
-    await peerConnection.setLocalDescription(offer);
-    
-    // Send offer immediately - ICE candidates will come via onicecandidate handler
-    console.log('Sending offer (ICE candidates will follow separately)');
-    sendMessage({
-      type: 'OFFER',
-      offer: offer
-    });
-    
-    // Monitor local audio
-    monitorLocalAudio();
-    
-  } catch (error) {
-    console.error('Error initializing voice chat:', error);
-    alert('Failed to access microphone. Please check permissions.');
-  }
-}
+   try {
+     // Get local media
+     localStream = await navigator.mediaDevices.getUserMedia({ 
+       audio: true, 
+       video: false 
+     });
+     
+     console.log('Local stream acquired:', localStream.getTracks());
+     
+     // Initialize WebRTC peer connection
+     const configuration = {
+       iceServers: [
+         // STUN servers - for NAT traversal
+         { urls: 'stun:stun.l.google.com:19302' },
+         { urls: 'stun:stun1.l.google.com:19302' },
+         { urls: 'stun:stun2.l.google.com:19302' },
+         { urls: 'stun:global.stun.twilio.com:3478' },
+         { urls: 'stun:openrelay.metered.ca:443' },
+         // TURN server - for when STUN fails (free, no auth needed)
+         { 
+           urls: 'turn:openrelay.metered.ca:443',
+           username: 'openrelayproject',
+           credential: 'openrelayproject'
+         }
+       ],
+       iceCandidatePoolSize: 10
+     };
+     
+     console.log('Creating RTCPeerConnection with TURN server:', configuration.iceServers.map(s => s.urls).join(', '));
+     
+     peerConnection = new RTCPeerConnection(configuration);
+     
+     // Add local stream to peer connection
+     localStream.getTracks().forEach(track => {
+       console.log('Adding local track:', track.kind);
+       peerConnection.addTrack(track, localStream);
+     });
+     
+     // Set up handlers
+     peerConnection.oniceconnectionstatechange = () => {
+       console.log('ICE Connection State:', peerConnection.iceConnectionState);
+     };
+     
+     peerConnection.onicegatheringstatechange = () => {
+       console.log('ICE Gathering State:', peerConnection.iceGatheringState);
+     };
+     
+     peerConnection.onconnectionstatechange = () => {
+       console.log('PeerConnection state:', peerConnection.connectionState);
+     };
+     
+     // Handle remote stream
+     peerConnection.ontrack = (event) => {
+       console.log('Received remote track:', event.track.kind);
+       remoteStream = event.streams[0];
+       const remoteAudio = document.getElementById('remote-audio');
+       remoteAudio.srcObject = remoteStream;
+       
+       // Explicitly play the audio - browsers require this
+       remoteAudio.play().then(() => {
+         console.log('Remote audio playing');
+       }).catch(error => {
+         console.error('Failed to play remote audio:', error);
+       });
+       
+       updateRemoteAudioIndicator();
+     };
+     
+     // Handle ICE candidates
+     peerConnection.onicecandidate = (event) => {
+       if (event.candidate) {
+         console.log('Sending ICE candidate');
+         sendMessage({
+           type: 'ICE_CANDIDATE',
+           candidate: event.candidate
+         });
+       }
+     };
+     
+     // Create and send offer
+     const offer = await peerConnection.createOffer();
+     await peerConnection.setLocalDescription(offer);
+     
+     // Send offer immediately - ICE candidates will come via onicecandidate handler
+     console.log('Sending offer (ICE candidates will follow separately)');
+     sendMessage({
+       type: 'OFFER',
+       offer: offer
+     });
+     
+     // Monitor local audio
+     monitorLocalAudio();
+     
+   } catch (error) {
+     console.error('Error initializing voice chat:', error);
+     alert('Failed to access microphone. Please check permissions.');
+   }
+ }
 
 async function handleOffer(message) {
-  try {
-    if (!peerConnection) {
-      const configuration = {
-        iceServers: [
-          // STUN servers - for NAT traversal
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' },
-          { urls: 'stun:stun2.l.google.com:19302' },
-          { urls: 'stun:global.stun.twilio.com:3478' },
-          { urls: 'stun:openrelay.metered.ca:443' },
-          // TURN server - for when STUN fails (free, no auth needed)
-          { 
-            urls: 'turn:openrelay.metered.ca:443',
-            username: 'openrelayproject',
-            credential: 'openrelayproject'
-          }
-        ]
-      };
-      
-      console.log('Answerer: Creating RTCPeerConnection with TURN server');
-      
-      peerConnection = new RTCPeerConnection(configuration);
-      
-      localStream.getTracks().forEach(track => {
-        peerConnection.addTrack(track, localStream);
-      });
-      
-      peerConnection.ontrack = (event) => {
-        console.log('Received remote track:', event.track.kind);
-        remoteStream = event.streams[0];
-        const remoteAudio = document.getElementById('remote-audio');
-        remoteAudio.srcObject = remoteStream;
-        
-        // Explicitly play the audio - browsers require this
-        remoteAudio.play().then(() => {
-          console.log('Remote audio playing');
-        }).catch(error => {
-          console.error('Failed to play remote audio:', error);
-        });
-        
-        updateRemoteAudioIndicator();
-      };
-      
-      peerConnection.onicecandidate = (event) => {
-        if (event.candidate) {
-          console.log('Answerer: Sending ICE candidate');
-          sendMessage({
-            type: 'ICE_CANDIDATE',
-            candidate: event.candidate
-          });
-        }
-      };
-      
-      peerConnection.onconnectionstatechange = () => {
-        console.log('Answerer PeerConnection state:', peerConnection.connectionState);
-        
-        if (peerConnection.connectionState === 'failed' || peerConnection.connectionState === 'disconnected') {
-          console.error('Answerer: Peer connection failed or disconnected');
-        }
-      };
-    }
-    
-    await peerConnection.setRemoteDescription(
-      new RTCSessionDescription(message.offer)
-    );
-    
-    const answer = await peerConnection.createAnswer();
-    await peerConnection.setLocalDescription(answer);
-    
-    // Send answer immediately
-    console.log('Sending answer');
-    sendMessage({
-      type: 'ANSWER',
-      answer: answer
-    });
-  } catch (error) {
-    console.error('Error handling offer:', error);
-  }
-}
+   try {
+     if (!peerConnection) {
+       // Answerer: need to get local media first if not already done
+       if (!localStream) {
+         console.log('Answerer: Getting local media first');
+         localStream = await navigator.mediaDevices.getUserMedia({ 
+           audio: true, 
+           video: false 
+         });
+         console.log('Answerer: Local stream acquired');
+       }
+       
+       const configuration = {
+         iceServers: [
+           // STUN servers - for NAT traversal
+           { urls: 'stun:stun.l.google.com:19302' },
+           { urls: 'stun:stun1.l.google.com:19302' },
+           { urls: 'stun:stun2.l.google.com:19302' },
+           { urls: 'stun:global.stun.twilio.com:3478' },
+           { urls: 'stun:openrelay.metered.ca:443' },
+           // TURN server - for when STUN fails (free, no auth needed)
+           { 
+             urls: 'turn:openrelay.metered.ca:443',
+             username: 'openrelayproject',
+             credential: 'openrelayproject'
+           }
+         ]
+       };
+       
+       console.log('Answerer: Creating RTCPeerConnection with TURN server');
+       
+       peerConnection = new RTCPeerConnection(configuration);
+       
+       // Add local stream to peer connection BEFORE creating answer
+       localStream.getTracks().forEach(track => {
+         console.log('Answerer: Adding local track:', track.kind);
+         peerConnection.addTrack(track, localStream);
+       });
+       
+       peerConnection.ontrack = (event) => {
+         console.log('Answerer: Received remote track:', event.track.kind);
+         remoteStream = event.streams[0];
+         const remoteAudio = document.getElementById('remote-audio');
+         remoteAudio.srcObject = remoteStream;
+         
+         // Explicitly play the audio - browsers require this
+         remoteAudio.play().then(() => {
+           console.log('Answerer: Remote audio playing');
+         }).catch(error => {
+           console.error('Answerer: Failed to play remote audio:', error);
+         });
+         
+         updateRemoteAudioIndicator();
+       };
+       
+       peerConnection.onicecandidate = (event) => {
+         if (event.candidate) {
+           console.log('Answerer: Sending ICE candidate');
+           sendMessage({
+             type: 'ICE_CANDIDATE',
+             candidate: event.candidate
+           });
+         }
+       };
+       
+       peerConnection.onconnectionstatechange = () => {
+         console.log('Answerer: PeerConnection state:', peerConnection.connectionState);
+         
+         if (peerConnection.connectionState === 'failed' || peerConnection.connectionState === 'disconnected') {
+           console.error('Answerer: Peer connection failed or disconnected');
+         }
+       };
+       
+       peerConnection.oniceconnectionstatechange = () => {
+         console.log('Answerer: ICE Connection State:', peerConnection.iceConnectionState);
+       };
+       
+       peerConnection.onicegatheringstatechange = () => {
+         console.log('Answerer: ICE Gathering State:', peerConnection.iceGatheringState);
+       };
+     }
+     
+     await peerConnection.setRemoteDescription(
+       new RTCSessionDescription(message.offer)
+     );
+     
+     const answer = await peerConnection.createAnswer();
+     await peerConnection.setLocalDescription(answer);
+     
+     // Send answer immediately
+     console.log('Answerer: Sending answer');
+     sendMessage({
+       type: 'ANSWER',
+       answer: answer
+     });
+   } catch (error) {
+     console.error('Error handling offer:', error);
+   }
+ }
 
 async function handleAnswer(message) {
   try {
