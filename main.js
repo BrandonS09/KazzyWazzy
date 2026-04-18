@@ -108,12 +108,22 @@ function handleServerMessage(message) {
     case 'PARTNER_LEFT':
       handlePartnerLeft(message);
       break;
+    case 'PARTNER_PLAY_AGAIN_REQUEST':
+      handlePartnerPlayAgainRequest(message);
+      break;
   }
 }
 
 function handleJoinedLobby(message) {
   userId = message.userId;
   switchScreen('lobby');
+}
+
+function handlePartnerPlayAgainRequest(message) {
+  const statusEl = document.getElementById('play-again-status');
+  if (statusEl) {
+    statusEl.textContent = 'Partner wants to play again...';
+  }
 }
 
 function updateUserCount(message) {
@@ -192,9 +202,14 @@ function handleGameStarted(message) {
    switchScreen('game');
    initializeGame(message.game);
    
+   // Hide game over overlay if it was open
+   const overlay = document.getElementById('game-over-overlay');
+   if (overlay) overlay.classList.add('hidden');
+   
    // Only the caller (player1) initiates voice chat.
    // The answerer (player2) waits for the offer to arrive via handleOffer().
-   if (isPlayer1) {
+   // Do not re-initialize if peerConnection already exists (during Play Again)
+   if (isPlayer1 && !voiceState.peerConnection) {
      initializeVoiceChat();
    }
  }
@@ -213,9 +228,25 @@ function initializeGame(game) {
    const onGameEnd = (result) => {
      setTimeout(() => {
        const resultText = result === 'win' ? '✓ You Won! 🎉' : result === 'loss' ? '✗ You Lost 😢' : '= Draw 🤝';
-       alert(`Game Over!\n${resultText}`);
-       cleanup();
-       switchScreen('lobby');
+       const overlay = document.getElementById('game-over-overlay');
+       const msgEl = document.getElementById('game-over-message');
+       const statusEl = document.getElementById('play-again-status');
+       
+       if (overlay && msgEl && statusEl) {
+         msgEl.textContent = resultText;
+         statusEl.textContent = '';
+         overlay.classList.remove('hidden');
+         
+         // Set Play Again state back
+         const playAgainBtn = document.getElementById('play-again-btn');
+         playAgainBtn.disabled = false;
+         playAgainBtn.textContent = 'Play Again';
+       } else {
+         // Fallback if elements not found
+         alert(`Game Over!\n${resultText}`);
+         cleanup();
+         switchScreen('lobby');
+       }
      }, 500);
    };
    
@@ -329,17 +360,23 @@ async function initializeVoiceChat() {
   console.log('🎤 VOICE CHAT [CALLER]: Starting initialization...');
   
   try {
-    // Step 1: Get microphone
+    // Step 1: Get microphone AND video
     voiceState.localStream = await navigator.mediaDevices.getUserMedia({
       audio: {
         echoCancellation: true,
         noiseSuppression: true,
         autoGainControl: true
       },
-      video: false
+      video: true
     });
-    console.log('✅ VOICE CHAT [CALLER]: Microphone access granted');
+    console.log('✅ VOICE CHAT [CALLER]: Media access granted');
     updateLocalIndicator(true);
+    
+    // Attach local stream to local video element
+    const localVideo = document.getElementById('local-video');
+    if (localVideo) {
+      localVideo.srcObject = voiceState.localStream;
+    }
     
     // Step 2: Create peer connection with dynamically fetched ICE config
     const rtcConfig = await fetchICEServers();
@@ -378,9 +415,9 @@ async function initializeVoiceChat() {
 function setupVoiceChatHandlers() {
   const pc = voiceState.peerConnection;
   
-  // When we receive a remote audio track
+  // When we receive a remote media track
   pc.ontrack = (event) => {
-    console.log('🎵 VOICE CHAT: Received remote audio track:', event.track.kind);
+    console.log('🎵 VOICE CHAT: Received remote media track:', event.track.kind);
     
     if (event.streams && event.streams.length > 0) {
       voiceState.remoteStream = event.streams[0];
@@ -391,7 +428,7 @@ function setupVoiceChatHandlers() {
       }
       voiceState.remoteStream.addTrack(event.track);
     }
-    playRemoteAudio();
+    playRemoteMedia();
     updateRemoteIndicator(true);
   };
   
@@ -424,29 +461,30 @@ function setupVoiceChatHandlers() {
   };
 }
 
-function playRemoteAudio() {
-  const remoteAudio = document.getElementById('remote-audio');
-  if (!remoteAudio) {
-    console.error('❌ VOICE CHAT: Remote audio element not found in DOM');
+function playRemoteMedia() {
+  const remoteVideo = document.getElementById('remote-video');
+  if (!remoteVideo) {
+    console.error('❌ VOICE CHAT: Remote video element not found in DOM');
     return;
   }
   
-  remoteAudio.srcObject = voiceState.remoteStream;
-  remoteAudio.muted = false;
-  remoteAudio.volume = 1.0;
+  // Set the stream to the video element instead of audio
+  remoteVideo.srcObject = voiceState.remoteStream;
+  remoteVideo.muted = false;
+  remoteVideo.volume = 1.0;
   
-  const playPromise = remoteAudio.play();
+  const playPromise = remoteVideo.play();
   if (playPromise !== undefined) {
     playPromise
       .then(() => {
-        console.log('✅ VOICE CHAT: Remote audio is playing');
+        console.log('✅ VOICE CHAT: Remote media is playing');
       })
       .catch(err => {
         console.warn('⚠️ VOICE CHAT: Autoplay blocked:', err.message);
         // Browser blocked autoplay — retry on next user click
         const retryPlay = () => {
-          remoteAudio.play()
-            .then(() => console.log('✅ VOICE CHAT: Audio resumed after user interaction'))
+          remoteVideo.play()
+            .then(() => console.log('✅ VOICE CHAT: Media resumed after user interaction'))
             .catch(e => console.error('Retry play failed:', e));
         };
         document.addEventListener('click', retryPlay, { once: true });
@@ -462,7 +500,7 @@ async function handleOffer(message) {
   console.log('📬 VOICE CHAT [ANSWERER]: Received offer');
   
   try {
-    // Step 1: Get microphone (answerer didn't call initializeVoiceChat)
+    // Step 1: Get microphone AND video (answerer didn't call initializeVoiceChat)
     if (!voiceState.localStream) {
       voiceState.localStream = await navigator.mediaDevices.getUserMedia({
         audio: {
@@ -470,10 +508,15 @@ async function handleOffer(message) {
           noiseSuppression: true,
           autoGainControl: true
         },
-        video: false
+        video: true
       });
-      console.log('✅ VOICE CHAT [ANSWERER]: Microphone access granted');
+      console.log('✅ VOICE CHAT [ANSWERER]: Media access granted');
       updateLocalIndicator(true);
+      
+      const localVideo = document.getElementById('local-video');
+      if (localVideo) {
+        localVideo.srcObject = voiceState.localStream;
+      }
     }
     
     // Step 2: Create peer connection (only if not already created)
@@ -648,9 +691,14 @@ function cleanupVoiceChat() {
   voiceState.remoteStream = null;
   voiceState.iceCandidateBuffer = [];
   
-  const remoteAudio = document.getElementById('remote-audio');
-  if (remoteAudio) {
-    remoteAudio.srcObject = null;
+  const remoteVideo = document.getElementById('remote-video');
+  if (remoteVideo) {
+    remoteVideo.srcObject = null;
+  }
+  
+  const localVideo = document.getElementById('local-video');
+  if (localVideo) {
+    localVideo.srcObject = null;
   }
   
   updateLocalIndicator(false);
@@ -712,19 +760,49 @@ document.getElementById('toggle-microphone').addEventListener('click', (e) => {
   }
 });
 
+document.getElementById('toggle-video').addEventListener('click', (e) => {
+  if (voiceState.localStream) {
+    const videoTracks = voiceState.localStream.getVideoTracks();
+    let isVideoEnabled = false;
+    videoTracks.forEach(track => {
+      track.enabled = !track.enabled;
+      isVideoEnabled = track.enabled;
+    });
+    
+    e.target.classList.toggle('active', isVideoEnabled);
+    e.target.textContent = isVideoEnabled ? '📷 Video On' : '📷 Video Off';
+  }
+});
+
 document.getElementById('toggle-speaker').addEventListener('click', (e) => {
-  const remoteAudio = document.getElementById('remote-audio');
-  remoteAudio.muted = !remoteAudio.muted;
-  speakerEnabled = !remoteAudio.muted;
-  
-  e.target.classList.toggle('active', speakerEnabled);
-  e.target.textContent = speakerEnabled ? '🔊 Speaker On' : '🔊 Speaker Off';
+  const remoteVideo = document.getElementById('remote-video');
+  if (remoteVideo) {
+    remoteVideo.muted = !remoteVideo.muted;
+    speakerEnabled = !remoteVideo.muted;
+    
+    e.target.classList.toggle('active', speakerEnabled);
+    e.target.textContent = speakerEnabled ? '🔊 Speaker On' : '🔊 Speaker Off';
+  }
 });
 
 document.getElementById('leave-game-btn').addEventListener('click', () => {
   sendMessage({ type: 'LEAVE_PAIR' });
   cleanup();
   switchScreen('lobby');
+});
+
+// Play Again Overlay Buttons
+document.getElementById('play-again-btn').addEventListener('click', (e) => {
+  const btn = e.target;
+  btn.disabled = true;
+  btn.textContent = 'Waiting for partner...';
+  
+  sendMessage({ type: 'PLAY_AGAIN_REQUEST' });
+});
+
+document.getElementById('overlay-leave-btn').addEventListener('click', () => {
+  document.getElementById('game-over-overlay').classList.add('hidden');
+  document.getElementById('leave-game-btn').click();
 });
 
 function cleanup() {

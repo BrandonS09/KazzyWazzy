@@ -149,6 +149,9 @@ function handleMessage(userId, ws, message) {
     case 'LEAVE_PAIR':
       handleLeavePair(userId);
       break;
+    case 'PLAY_AGAIN_REQUEST':
+      handlePlayAgainRequest(userId, message);
+      break;
   }
 }
 
@@ -223,7 +226,8 @@ function attemptPairing() {
     user2Id,
     status: 'selecting_game',
     gameId: null,
-    selectedGame: null
+    selectedGame: null,
+    playAgainVotes: new Set()
   });
 
   user1.pairId = pairId;
@@ -438,6 +442,57 @@ function handleUserDisconnect(userId) {
     count: users.size,
     queueSize: waitingQueue.size
   });
+}
+
+function handlePlayAgainRequest(userId, message) {
+  const user = users.get(userId);
+  if (!user || !user.pairId) return;
+
+  const pair = pairs.get(user.pairId);
+  if (!pair) return;
+
+  if (!pair.playAgainVotes) {
+    pair.playAgainVotes = new Set();
+  }
+
+  pair.playAgainVotes.add(userId);
+
+  const partnerId = pair.user1Id === userId ? pair.user2Id : pair.user1Id;
+  const partner = users.get(partnerId);
+
+  // Let partner know that this user wants to play again
+  if (partner) {
+    partner.ws.send(JSON.stringify({
+      type: 'PARTNER_PLAY_AGAIN_REQUEST'
+    }));
+  }
+
+  // If both players agree, restart the game
+  if (pair.playAgainVotes.size === 2) {
+    pair.playAgainVotes.clear();
+    pair.gameId = uuidv4();
+    
+    const partner1 = users.get(pair.user1Id);
+    const partner2 = users.get(pair.user2Id);
+
+    if (partner1) {
+      partner1.ws.send(JSON.stringify({
+        type: 'GAME_STARTED',
+        gameId: pair.gameId,
+        game: pair.selectedGame,
+        isPlayer1: true
+      }));
+    }
+
+    if (partner2) {
+      partner2.ws.send(JSON.stringify({
+        type: 'GAME_STARTED',
+        gameId: pair.gameId,
+        game: pair.selectedGame,
+        isPlayer1: false
+      }));
+    }
+  }
 }
 
 function broadcast(message) {

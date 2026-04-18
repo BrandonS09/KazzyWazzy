@@ -58,18 +58,21 @@
           <p>Partner: <span id="game-partner-name">-</span></p>
         </div>
         
-        <div class="voice-chat-section">
-          <div class="voice-controls">
+        <div class="video-chat-section">
+          <div class="video-controls">
             <button id="toggle-microphone" class="voice-btn">🎤 Enable Microphone</button>
+            <button id="toggle-video" class="voice-btn">📷 Enable Video</button>
             <button id="toggle-speaker" class="voice-btn speaker-on">🔊 Speaker On</button>
           </div>
-          <div class="audio-indicators">
-            <div class="audio-indicator">
+          <div class="video-streams">
+            <div class="video-container local">
               <p>You</p>
+              <video id="local-video" autoplay playsinline muted></video>
               <div id="local-audio-indicator" class="indicator"></div>
             </div>
-            <div class="audio-indicator">
+            <div class="video-container remote">
               <p>Partner</p>
+              <video id="remote-video" autoplay playsinline></video>
               <div id="remote-audio-indicator" class="indicator"></div>
             </div>
           </div>
@@ -80,11 +83,22 @@
         </div>
 
         <button id="leave-game-btn">Leave Game</button>
+
+        <!-- Game Over Overlay -->
+        <div id="game-over-overlay" class="overlay hidden">
+          <div class="overlay-content">
+            <h2 id="game-over-title">Game Over!</h2>
+            <p id="game-over-message"></p>
+            <div class="overlay-buttons">
+              <button id="play-again-btn">Play Again</button>
+              <button id="overlay-leave-btn" class="secondary">Leave</button>
+            </div>
+            <p id="play-again-status" class="status-msg"></p>
+          </div>
+        </div>
       </div>
     </div>
   </div>
-
-  <audio id="remote-audio" autoplay playsinline></audio>
   <script src="./games.js"></script>
   <script src="./main.js"></script>
 </body>

@@ -83,6 +83,64 @@ p {
   font-size: 1.1em;
 }
 
+/* Game Over Overlay */
+.overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(255, 255, 255, 0.9);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 100;
+  border-radius: 10px;
+  backdrop-filter: blur(4px);
+}
+
+.overlay.hidden {
+  display: none;
+}
+
+.overlay-content {
+  background: white;
+  padding: 30px;
+  border-radius: 15px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+  text-align: center;
+  border: 2px solid #667eea;
+  max-width: 90%;
+  width: 350px;
+}
+
+.overlay-content h2 {
+  margin-top: 0;
+  color: #667eea;
+  font-size: 2em;
+}
+
+.overlay-content p {
+  font-size: 1.2em;
+  color: #333;
+  margin-bottom: 25px;
+}
+
+.overlay-buttons {
+  display: flex;
+  gap: 15px;
+  justify-content: center;
+}
+
+.status-msg {
+  color: #764ba2 !important;
+  font-size: 0.9em !important;
+  margin-bottom: 0 !important;
+  margin-top: 15px !important;
+  min-height: 1.2em;
+}
+
+
 /* Lobby Screen */
 .lobby-content {
   display: flex;
@@ -203,14 +261,14 @@ p {
   margin: 5px 0;
 }
 
-.voice-chat-section {
+.video-chat-section {
   background: #f9f9f9;
   padding: 20px;
   border-radius: 10px;
   border: 2px solid #e0e0e0;
 }
 
-.voice-controls {
+.video-controls {
   display: flex;
   gap: 10px;
   justify-content: center;
@@ -240,22 +298,37 @@ p {
   border-color: #667eea;
 }
 
-.audio-indicators {
+.video-streams {
   display: flex;
   gap: 30px;
   justify-content: center;
 }
 
-.audio-indicator {
+.video-container {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 8px;
 }
 
-.audio-indicator p {
+.video-container video {
+  width: 160px;
+  height: 120px;
+  background: #000;
+  border-radius: 8px;
+  object-fit: cover;
+  border: 2px solid #ccc;
+}
+
+.video-container.remote video {
+  width: 240px;
+  height: 180px;
+}
+
+.video-container p {
   margin: 0;
   font-size: 0.9em;
+  color: #666;
 }
 
 .indicator {
