@@ -315,7 +315,7 @@ async function initializeVoiceChat() {
       };
      
       // Handle remote stream
-      peerConnection.ontrack = (event) => {
+       peerConnection.ontrack = (event) => {
         console.log('Received remote track:', event.track.kind, 'Track enabled:', event.track.enabled);
         remoteStream = event.streams[0];
         console.log('Remote stream received:', remoteStream, 'Audio tracks:', remoteStream.getAudioTracks().length);
@@ -342,7 +342,8 @@ async function initializeVoiceChat() {
           });
         }
         
-        updateRemoteAudioIndicator();
+        // DON'T monitor audio for now - it might interfere with playback
+        // updateRemoteAudioIndicator();
       };
      
       // Handle ICE candidates
@@ -457,7 +458,8 @@ async function handleOffer(message) {
             });
           }
           
-          updateRemoteAudioIndicator();
+          // DON'T monitor audio for now - it might interfere with playback
+          // updateRemoteAudioIndicator();
         };
        
        peerConnection.onicecandidate = (event) => {
