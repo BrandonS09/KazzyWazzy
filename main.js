@@ -12,6 +12,7 @@ let gameId = null;
 let microphoneEnabled = false;
 let speakerEnabled = true;
 let currentGame = null;
+let isPlayer1 = true;
 
 const SIGNALING_SERVER = `ws://${window.location.host}`;
 
@@ -84,11 +85,11 @@ function handleServerMessage(message) {
     case 'ICE_CANDIDATE':
       handleICECandidate(message);
       break;
-    case 'PARTNER_LEFT':
-      handlePartnerLeft(message);
-      break;
     case 'GAME_MOVE':
       handleGameMove(message);
+      break;
+    case 'PARTNER_LEFT':
+      handlePartnerLeft(message);
       break;
   }
 }
@@ -156,7 +157,7 @@ function selectGame(game, element) {
 function handleGameSelected(message) {
   const gameList = document.getElementById('game-list');
   const items = gameList.querySelectorAll('.game-item');
-  items.forEach((item, index) => {
+  items.forEach((item) => {
     if (item.textContent.includes(message.game)) {
       item.classList.add('selected');
     }
@@ -164,16 +165,84 @@ function handleGameSelected(message) {
 }
 
 function handleGameStarted(message) {
-  gameId = message.gameId;
-  selectedGame = message.game;
-  document.getElementById('current-game').textContent = message.game;
-  document.getElementById('game-partner-name').textContent = 
-    document.getElementById('partner-name').textContent;
+   gameId = message.gameId;
+   selectedGame = message.game;
+   isPlayer1 = message.isPlayer1 === true;
+   document.getElementById('current-game').textContent = message.game;
+   document.getElementById('game-partner-name').textContent = 
+     document.getElementById('partner-name').textContent;
+   
+   switchScreen('game');
+   initializeGame(message.game);
+   initializeVoiceChat();
+ }
+
+function initializeGame(game) {
+  const gameArea = document.getElementById('game-area');
   
-  switchScreen('game');
-  initializeGame(message.game);
-  initializeVoiceChat();
+  const onGameMove = (moveData) => {
+    sendMessage({
+      type: 'GAME_MOVE',
+      move: moveData
+    });
+  };
+  
+  const onGameEnd = (result) => {
+    setTimeout(() => {
+      const resultText = result === 'win' ? '✓ You Won! 🎉' : result === 'loss' ? '✗ You Lost 😢' : '= Draw 🤝';
+      alert(`Game Over!\n${resultText}`);
+      cleanup();
+      switchScreen('lobby');
+    }, 500);
+  };
+  
+  switch(game) {
+    case 'Tic Tac Toe':
+      currentGame = new TicTacToe(gameArea, onGameMove, onGameEnd, isPlayer1);
+      break;
+    case 'Connect Four':
+      currentGame = new ConnectFour(gameArea, onGameMove, onGameEnd, isPlayer1);
+      break;
+    case 'Trivia':
+      currentGame = new Trivia(gameArea, onGameMove, onGameEnd, isPlayer1);
+      break;
+    case 'Word Battle':
+      currentGame = new WordBattle(gameArea, onGameMove, onGameEnd, isPlayer1);
+      break;
+    case 'Rock Paper Scissors':
+      currentGame = new RockPaperScissors(gameArea, onGameMove, onGameEnd, isPlayer1);
+      break;
+    case 'Number Guessing':
+      currentGame = new SimpleGuessing(gameArea, onGameMove, onGameEnd, isPlayer1);
+      break;
+    default:
+      gameArea.innerHTML = '<p>Game not implemented yet</p>';
+  }
 }
+
+function handleGameMove(message) {
+   if (!currentGame) return;
+   
+   const move = message.move;
+   
+   if (selectedGame === 'Tic Tac Toe' || selectedGame === 'Connect Four') {
+     if (currentGame.receivedMove) {
+       currentGame.receivedMove(move);
+     }
+   } else if (selectedGame === 'Trivia' || selectedGame === 'Word Battle') {
+     if (currentGame.receivedAnswer) {
+       currentGame.receivedAnswer(move);
+     }
+   } else if (selectedGame === 'Rock Paper Scissors') {
+     if (currentGame.receivedMove) {
+       currentGame.receivedMove(move);
+     }
+   } else if (selectedGame === 'Number Guessing') {
+     if (currentGame.receivedGuess) {
+       currentGame.receivedGuess(move);
+     }
+   }
+ }
 
 async function initializeVoiceChat() {
   try {
@@ -304,125 +373,73 @@ async function handleICECandidate(message) {
 }
 
 function monitorLocalAudio() {
-  const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-  const analyser = audioContext.createAnalyser();
-  const microphone = audioContext.createMediaStreamSource(localStream);
-  const dataArray = new Uint8Array(analyser.frequencyBinCount);
-  
-  microphone.connect(analyser);
-  analyser.smoothingTimeConstant = 0.8;
-  analyser.fftSize = 1024;
-  
-  const indicator = document.getElementById('local-audio-indicator');
-  
-  function check() {
-    analyser.getByteFrequencyData(dataArray);
-    const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
+  try {
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    const analyser = audioContext.createAnalyser();
+    const microphone = audioContext.createMediaStreamSource(localStream);
+    const dataArray = new Uint8Array(analyser.frequencyBinCount);
     
-    if (average > 30) {
-      indicator.classList.add('active');
-    } else {
-      indicator.classList.remove('active');
+    microphone.connect(analyser);
+    analyser.smoothingTimeConstant = 0.8;
+    analyser.fftSize = 1024;
+    
+    const indicator = document.getElementById('local-audio-indicator');
+    
+    function check() {
+      analyser.getByteFrequencyData(dataArray);
+      const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
+      
+      if (average > 30) {
+        indicator.classList.add('active');
+      } else {
+        indicator.classList.remove('active');
+      }
+      
+      requestAnimationFrame(check);
     }
     
-    requestAnimationFrame(check);
+    check();
+  } catch (error) {
+    console.error('Error monitoring local audio:', error);
   }
-  
-  check();
 }
 
 function updateRemoteAudioIndicator() {
-  const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-  const analyser = audioContext.createAnalyser();
-  const microphone = audioContext.createMediaStreamSource(remoteStream);
-  const dataArray = new Uint8Array(analyser.frequencyBinCount);
-  
-  microphone.connect(analyser);
-  analyser.smoothingTimeConstant = 0.8;
-  analyser.fftSize = 1024;
-  
-  const indicator = document.getElementById('remote-audio-indicator');
-  
-  function check() {
-    analyser.getByteFrequencyData(dataArray);
-    const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
+  try {
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    const analyser = audioContext.createAnalyser();
+    const microphone = audioContext.createMediaStreamSource(remoteStream);
+    const dataArray = new Uint8Array(analyser.frequencyBinCount);
     
-    if (average > 30) {
-      indicator.classList.add('active');
-    } else {
-      indicator.classList.remove('active');
+    microphone.connect(analyser);
+    analyser.smoothingTimeConstant = 0.8;
+    analyser.fftSize = 1024;
+    
+    const indicator = document.getElementById('remote-audio-indicator');
+    
+    function check() {
+      analyser.getByteFrequencyData(dataArray);
+      const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
+      
+      if (average > 30) {
+        indicator.classList.add('active');
+      } else {
+        indicator.classList.remove('active');
+      }
+      
+      requestAnimationFrame(check);
     }
     
-    requestAnimationFrame(check);
+    check();
+  } catch (error) {
+    console.error('Error monitoring remote audio:', error);
   }
-  
-  check();
 }
 
 function handlePartnerLeft() {
   alert('Your partner has left the game.');
   cleanup();
   switchScreen('lobby');
-}
-
-function initializeGame(game) {
-  const gameArea = document.getElementById('game-area');
-  
-  const onGameMove = (moveData) => {
-    sendMessage({
-      type: 'GAME_MOVE',
-      move: moveData
-    });
-  };
-  
-  const onGameEnd = (result) => {
-    setTimeout(() => {
-      alert(`Game Over! Result: ${result === 'win' ? 'You Won!' : result === 'loss' ? 'You Lost!' : 'Draw!'}`);
-      cleanup();
-      switchScreen('lobby');
-    }, 1000);
-  };
-  
-  switch(game) {
-    case 'Tic Tac Toe':
-      currentGame = new TicTacToe(gameArea, onGameMove, onGameEnd);
-      break;
-    case 'Connect Four':
-      currentGame = new ConnectFour(gameArea, onGameMove, onGameEnd);
-      break;
-    case 'Trivia':
-      currentGame = new Trivia(gameArea, onGameMove, onGameEnd);
-      break;
-    case 'Word Battle':
-      currentGame = new WordBattle(gameArea, onGameMove, onGameEnd);
-      break;
-    case 'Quick Draw':
-      currentGame = new QuickDraw(gameArea, onGameMove, onGameEnd);
-      break;
-    case 'Chess':
-      currentGame = new TicTacToe(gameArea, onGameMove, onGameEnd); // Placeholder
-      break;
-    default:
-      gameArea.innerHTML = '<p>Game not implemented yet</p>';
-  }
-}
-
-function handleGameMove(message) {
-  if (!currentGame) return;
-  
-  const move = message.move;
-  
-  if (selectedGame === 'Tic Tac Toe') {
-    currentGame.receivedMove(move.index);
-  } else if (selectedGame === 'Connect Four') {
-    currentGame.receivedMove(move.col);
-  } else if (selectedGame === 'Trivia') {
-    currentGame.receivedAnswer(move);
-  } else if (selectedGame === 'Word Battle') {
-    currentGame.receivedWord(move);
-  } else if (selectedGame === 'Quick Draw') {
-    currentGame.receivedDrawing(move);
-  }
 }
 
 // Event listeners
@@ -508,6 +525,9 @@ function cleanup() {
   partnerId = null;
   gameId = null;
   selectedGame = null;
+  currentGame = null;
+  microphoneEnabled = false;
+  speakerEnabled = true;
 }
 
 // Initialize

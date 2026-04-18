@@ -16,12 +16,12 @@ app.use(express.json());
 
 // Game types available
 const GAMES = [
-  'Chess',
-  'Connect Four',
   'Tic Tac Toe',
-  'Word Battle',
+  'Connect Four',
   'Trivia',
-  'Quick Draw'
+  'Word Battle',
+  'Rock Paper Scissors',
+  'Number Guessing'
 ];
 
 // User management
@@ -229,34 +229,36 @@ function handleSelectGame(userId, message) {
 }
 
 function handleStartGame(userId, message) {
-  const user = users.get(userId);
-  if (!user || !user.pairId) return;
+   const user = users.get(userId);
+   if (!user || !user.pairId) return;
 
-  const pair = pairs.get(user.pairId);
-  if (!pair) return;
+   const pair = pairs.get(user.pairId);
+   if (!pair) return;
 
-  pair.status = 'in_game';
-  pair.gameId = uuidv4();
+   pair.status = 'in_game';
+   pair.gameId = uuidv4();
 
-  const partner1 = users.get(pair.user1Id);
-  const partner2 = users.get(pair.user2Id);
+   const partner1 = users.get(pair.user1Id);
+   const partner2 = users.get(pair.user2Id);
 
-  if (partner1) {
-    partner1.ws.send(JSON.stringify({
-      type: 'GAME_STARTED',
-      gameId: pair.gameId,
-      game: pair.selectedGame
-    }));
-  }
+   if (partner1) {
+     partner1.ws.send(JSON.stringify({
+       type: 'GAME_STARTED',
+       gameId: pair.gameId,
+       game: pair.selectedGame,
+       isPlayer1: true
+     }));
+   }
 
-  if (partner2) {
-    partner2.ws.send(JSON.stringify({
-      type: 'GAME_STARTED',
-      gameId: pair.gameId,
-      game: pair.selectedGame
-    }));
-  }
-}
+   if (partner2) {
+     partner2.ws.send(JSON.stringify({
+       type: 'GAME_STARTED',
+       gameId: pair.gameId,
+       game: pair.selectedGame,
+       isPlayer1: false
+     }));
+   }
+ }
 
 function handleICECandidate(userId, message) {
   const user = users.get(userId);

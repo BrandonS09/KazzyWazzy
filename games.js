@@ -1,66 +1,76 @@
-// Game implementations for Team Game Pairing
+// Fully Functional Multiplayer Game Implementations
 
 class TicTacToe {
-  constructor(container, onMove, onGameEnd) {
+  constructor(container, onMove, onGameEnd, isPlayer1) {
     this.container = container;
     this.onMove = onMove;
     this.onGameEnd = onGameEnd;
+    this.isPlayer1 = isPlayer1;
+    this.playerSymbol = isPlayer1 ? 'X' : 'O';
+    this.opponentSymbol = isPlayer1 ? 'O' : 'X';
     this.board = Array(9).fill(null);
-    this.currentPlayer = 'X'; // Player is always X, Opponent is O
+    this.currentTurn = 'X'; // X always goes first
     this.gameOver = false;
+    this.winner = null;
     this.render();
-  }
-
-  render() {
-    this.container.innerHTML = `
-      <div class="game-board tic-tac-toe">
-        <div class="status">You: <strong>X</strong> | Opponent: <strong>O</strong></div>
-        <div class="board">
-          ${this.board.map((cell, index) => `
-            <div class="cell" data-index="${index}" onclick="window.currentGame.makeMove(${index})">
-              ${cell || ''}
-            </div>
-          `).join('')}
-        </div>
-        ${this.gameOver ? '<div class="game-status">Game Over</div>' : '<div class="game-status">Your Turn: X</div>'}
-      </div>
-    `;
   }
 
   makeMove(index) {
-    if (this.board[index] || this.gameOver || this.currentPlayer !== 'X') return;
-    
-    this.board[index] = 'X';
-    this.onMove({ type: 'move', index });
-    this.currentPlayer = 'O';
-    
+    if (this.gameOver || this.board[index] !== null) return;
+    if (this.currentTurn !== this.playerSymbol) return; // Not your turn
+
+    this.board[index] = this.playerSymbol;
+    this.currentTurn = this.opponentSymbol;
+    this.render();
+
     const winner = this.checkWinner();
     if (winner) {
       this.gameOver = true;
-      this.onGameEnd(winner === 'X' ? 'win' : 'loss');
-    } else if (this.board.every(cell => cell !== null)) {
-      this.gameOver = true;
-      this.onGameEnd('draw');
+      this.winner = winner;
+      this.onMove({ type: 'move', index, gameState: winner === this.playerSymbol ? 'win' : 'loss' });
+      setTimeout(() => this.onGameEnd(winner === this.playerSymbol ? 'win' : 'loss'), 500);
+      return;
     }
-    
-    this.render();
+
+    if (this.board.every(cell => cell !== null)) {
+      this.gameOver = true;
+      this.onMove({ type: 'move', index, gameState: 'draw' });
+      setTimeout(() => this.onGameEnd('draw'), 500);
+      return;
+    }
+
+    this.onMove({ type: 'move', index });
   }
 
-  receivedMove(index) {
-    if (this.board[index] || this.gameOver) return;
-    
-    this.board[index] = 'O';
-    this.currentPlayer = 'X';
-    
-    const winner = this.checkWinner();
-    if (winner) {
+  receivedMove(data) {
+    if (this.gameOver) return;
+
+    this.board[data.index] = this.opponentSymbol;
+    this.currentTurn = this.playerSymbol;
+
+    if (data.gameState === 'win') {
       this.gameOver = true;
-      this.onGameEnd(winner === 'O' ? 'loss' : 'win');
-    } else if (this.board.every(cell => cell !== null)) {
-      this.gameOver = true;
-      this.onGameEnd('draw');
+      this.winner = this.opponentSymbol;
+      this.render();
+      setTimeout(() => this.onGameEnd('loss'), 500);
+      return;
     }
-    
+
+    if (data.gameState === 'loss') {
+      this.gameOver = true;
+      this.winner = this.playerSymbol;
+      this.render();
+      setTimeout(() => this.onGameEnd('win'), 500);
+      return;
+    }
+
+    if (data.gameState === 'draw') {
+      this.gameOver = true;
+      this.render();
+      setTimeout(() => this.onGameEnd('draw'), 500);
+      return;
+    }
+
     this.render();
   }
 
@@ -70,107 +80,129 @@ class TicTacToe {
       [0, 3, 6], [1, 4, 7], [2, 5, 8],
       [0, 4, 8], [2, 4, 6]
     ];
-    
-    for (let line of lines) {
-      const [a, b, c] = line;
+
+    for (let [a, b, c] of lines) {
       if (this.board[a] && this.board[a] === this.board[b] && this.board[a] === this.board[c]) {
         return this.board[a];
       }
     }
     return null;
   }
-}
-
-class ConnectFour {
-  constructor(container, onMove, onGameEnd) {
-    this.container = container;
-    this.onMove = onMove;
-    this.onGameEnd = onGameEnd;
-    this.board = Array(42).fill(null); // 6 rows x 7 columns
-    this.cols = 7;
-    this.rows = 6;
-    this.currentPlayer = 'R'; // Red (Player), Yellow (Opponent)
-    this.gameOver = false;
-    this.render();
-  }
 
   render() {
-    const boardHTML = Array(this.rows).fill(0).map((_, row) => `
-      <div class="row">
-        ${Array(this.cols).fill(0).map((_, col) => {
-          const index = row * this.cols + col;
-          const cell = this.board[index];
-          return `
-            <div class="cell" data-col="${col}" onclick="window.currentGame.dropPiece(${col})" 
-                 style="background-color: ${cell === 'R' ? '#ff4444' : cell === 'Y' ? '#ffff00' : 'white'}">
-            </div>
-          `;
-        }).join('')}
-      </div>
-    `).join('');
+    const isMyTurn = this.currentTurn === this.playerSymbol && !this.gameOver;
+    const statusText = this.gameOver
+      ? (this.winner === this.playerSymbol ? '✓ You Won!' : this.winner === this.opponentSymbol ? '✗ You Lost!' : '= Draw')
+      : (isMyTurn ? '▶ Your Turn' : '⏳ Opponent Turn');
 
     this.container.innerHTML = `
-      <div class="game-board connect-four">
-        <div class="status">You: <span style="color: red;">●</span> Red | Opponent: <span style="color: gold;">●</span> Yellow</div>
-        <div class="board">${boardHTML}</div>
-        ${this.gameOver ? '<div class="game-status">Game Over</div>' : ''}
+      <div class="game-container">
+        <h2>Tic Tac Toe</h2>
+        <div class="game-status">${statusText}</div>
+        <div class="tic-tac-toe-board">
+          ${this.board.map((cell, idx) => `
+            <div class="cell" onclick="window.currentGame.makeMove(${idx})"
+                 style="cursor: ${this.gameOver || this.board[idx] ? 'default' : 'pointer'}">
+              <span style="font-size: 2em; font-weight: bold; color: ${cell === 'X' ? '#667eea' : cell === 'O' ? '#ff6b6b' : 'transparent'}">
+                ${cell || ''}
+              </span>
+            </div>
+          `).join('')}
+        </div>
       </div>
     `;
   }
+}
 
-  dropPiece(col) {
-    if (this.gameOver || this.currentPlayer !== 'R') return;
-    
+class ConnectFour {
+  constructor(container, onMove, onGameEnd, isPlayer1) {
+    this.container = container;
+    this.onMove = onMove;
+    this.onGameEnd = onGameEnd;
+    this.isPlayer1 = isPlayer1;
+    this.playerPiece = isPlayer1 ? 'P' : 'O';
+    this.opponentPiece = isPlayer1 ? 'O' : 'P';
+    this.board = Array(42).fill(null);
+    this.cols = 7;
+    this.rows = 6;
+    this.currentTurn = 'P'; // Player 1 (red) always goes first
+    this.gameOver = false;
+    this.winner = null;
+    this.render();
+  }
+
+  makeMove(col) {
+    if (this.gameOver) return;
+    if (this.currentTurn !== this.playerPiece) return; // Not your turn
+
     for (let row = this.rows - 1; row >= 0; row--) {
-      const index = row * this.cols + col;
-      if (this.board[index] === null) {
-        this.board[index] = 'R';
-        this.onMove({ type: 'move', col });
-        this.currentPlayer = 'Y';
-        
+      const idx = row * this.cols + col;
+      if (this.board[idx] === null) {
+        this.board[idx] = this.playerPiece;
+        this.currentTurn = this.opponentPiece;
+        this.render();
+
         const winner = this.checkWinner();
         if (winner) {
           this.gameOver = true;
-          this.onGameEnd(winner === 'R' ? 'win' : 'loss');
-        } else if (this.board.every(cell => cell !== null)) {
-          this.gameOver = true;
-          this.onGameEnd('draw');
+          this.winner = winner;
+          this.onMove({ type: 'move', col, gameState: winner === this.playerPiece ? 'win' : 'loss' });
+          setTimeout(() => this.onGameEnd(winner === this.playerPiece ? 'win' : 'loss'), 500);
+          return;
         }
-        
-        this.render();
+
+        if (this.board.every(cell => cell !== null)) {
+          this.gameOver = true;
+          this.onMove({ type: 'move', col, gameState: 'draw' });
+          setTimeout(() => this.onGameEnd('draw'), 500);
+          return;
+        }
+
+        this.onMove({ type: 'move', col });
         return;
       }
     }
   }
 
-  receivedMove(col) {
+  receivedMove(data) {
     if (this.gameOver) return;
-    
+
     for (let row = this.rows - 1; row >= 0; row--) {
-      const index = row * this.cols + col;
-      if (this.board[index] === null) {
-        this.board[index] = 'Y';
-        this.currentPlayer = 'R';
-        
-        const winner = this.checkWinner();
-        if (winner) {
-          this.gameOver = true;
-          this.onGameEnd(winner === 'Y' ? 'loss' : 'win');
-        } else if (this.board.every(cell => cell !== null)) {
-          this.gameOver = true;
-          this.onGameEnd('draw');
-        }
-        
+      const idx = row * this.cols + data.col;
+      if (this.board[idx] === null) {
+        this.board[idx] = this.opponentPiece;
+        this.currentTurn = this.playerPiece;
         this.render();
+
+        if (data.gameState === 'win') {
+          this.gameOver = true;
+          this.winner = this.opponentPiece;
+          setTimeout(() => this.onGameEnd('loss'), 500);
+          return;
+        }
+
+        if (data.gameState === 'loss') {
+          this.gameOver = true;
+          this.winner = this.playerPiece;
+          setTimeout(() => this.onGameEnd('win'), 500);
+          return;
+        }
+
+        if (data.gameState === 'draw') {
+          this.gameOver = true;
+          setTimeout(() => this.onGameEnd('draw'), 500);
+          return;
+        }
+
         return;
       }
     }
   }
 
   checkWinner() {
-    // Check horizontal
+    // Horizontal
     for (let row = 0; row < this.rows; row++) {
-      for (let col = 0; col < this.cols - 3; col++) {
+      for (let col = 0; col <= this.cols - 4; col++) {
         const idx = row * this.cols + col;
         const piece = this.board[idx];
         if (piece && this.board[idx + 1] === piece && this.board[idx + 2] === piece && this.board[idx + 3] === piece) {
@@ -178,295 +210,540 @@ class ConnectFour {
         }
       }
     }
-    
-    // Check vertical
+
+    // Vertical
     for (let col = 0; col < this.cols; col++) {
-      for (let row = 0; row < this.rows - 3; row++) {
+      for (let row = 0; row <= this.rows - 4; row++) {
         const idx = row * this.cols + col;
         const piece = this.board[idx];
-        if (piece && this.board[idx + this.cols] === piece && this.board[idx + this.cols * 2] === piece && this.board[idx + this.cols * 3] === piece) {
+        if (piece && this.board[idx + this.cols] === piece &&
+            this.board[idx + this.cols * 2] === piece &&
+            this.board[idx + this.cols * 3] === piece) {
           return piece;
         }
       }
     }
-    
-    // Check diagonal (/)
+
+    // Diagonal \
+    for (let row = 0; row <= this.rows - 4; row++) {
+      for (let col = 0; col <= this.cols - 4; col++) {
+        const idx = row * this.cols + col;
+        const piece = this.board[idx];
+        if (piece && this.board[idx + this.cols + 1] === piece &&
+            this.board[idx + (this.cols + 1) * 2] === piece &&
+            this.board[idx + (this.cols + 1) * 3] === piece) {
+          return piece;
+        }
+      }
+    }
+
+    // Diagonal /
     for (let row = 3; row < this.rows; row++) {
-      for (let col = 0; col < this.cols - 3; col++) {
+      for (let col = 0; col <= this.cols - 4; col++) {
         const idx = row * this.cols + col;
         const piece = this.board[idx];
-        if (piece && this.board[idx - this.cols + 1] === piece && this.board[idx - this.cols * 2 + 2] === piece && this.board[idx - this.cols * 3 + 3] === piece) {
+        if (piece && this.board[idx - this.cols + 1] === piece &&
+            this.board[idx - (this.cols - 1) * 2] === piece &&
+            this.board[idx - (this.cols - 1) * 3] === piece) {
           return piece;
         }
       }
     }
-    
-    // Check diagonal (\)
-    for (let row = 0; row < this.rows - 3; row++) {
-      for (let col = 0; col < this.cols - 3; col++) {
-        const idx = row * this.cols + col;
-        const piece = this.board[idx];
-        if (piece && this.board[idx + this.cols + 1] === piece && this.board[idx + this.cols * 2 + 2] === piece && this.board[idx + this.cols * 3 + 3] === piece) {
-          return piece;
-        }
-      }
-    }
-    
+
     return null;
+  }
+
+  render() {
+    const rows = [];
+    for (let r = 0; r < this.rows; r++) {
+      const cells = [];
+      for (let c = 0; c < this.cols; c++) {
+        const idx = r * this.cols + c;
+        const piece = this.board[idx];
+        let color = '#f0f0f0';
+        if (piece === 'P') color = '#ff6b6b';
+        if (piece === 'O') color = '#ffd93d';
+
+        cells.push(`
+          <div class="cell-circle" onclick="window.currentGame.makeMove(${c})"
+               style="background-color: ${color}; cursor: ${this.gameOver || this.board[idx] ? 'default' : 'pointer'}"></div>
+        `);
+      }
+      rows.push(`<div class="row">${cells.join('')}</div>`);
+    }
+
+    const isMyTurn = this.currentTurn === this.playerPiece && !this.gameOver;
+    const statusText = this.gameOver
+      ? (this.winner === this.playerPiece ? '✓ You Won!' : this.winner === this.opponentPiece ? '✗ You Lost!' : '= Draw')
+      : (isMyTurn ? '▶ Your Turn - Click Column' : '⏳ Opponent Turn');
+
+    this.container.innerHTML = `
+      <div class="game-container">
+        <h2>Connect Four</h2>
+        <div class="game-status">${statusText}</div>
+        <div class="connect-four-board">
+          ${rows.join('')}
+        </div>
+      </div>
+    `;
   }
 }
 
 class Trivia {
-  constructor(container, onMove, onGameEnd) {
+  constructor(container, onMove, onGameEnd, isPlayer1) {
     this.container = container;
     this.onMove = onMove;
     this.onGameEnd = onGameEnd;
+    this.isPlayer1 = isPlayer1;
     this.questions = [
       { q: 'What is the capital of France?', a: 'Paris', w: ['London', 'Berlin', 'Madrid'] },
       { q: 'What is 2 + 2?', a: '4', w: ['3', '5', '6'] },
       { q: 'What is the largest planet?', a: 'Jupiter', w: ['Saturn', 'Mars', 'Venus'] },
       { q: 'What color is the sky?', a: 'Blue', w: ['Red', 'Green', 'Yellow'] },
-      { q: 'What is the smallest prime number?', a: '2', w: ['1', '3', '0'] }
+      { q: 'What is the smallest prime number?', a: '2', w: ['1', '3', '0'] },
+      { q: 'What is the capital of Spain?', a: 'Madrid', w: ['Barcelona', 'Seville', 'Valencia'] },
+      { q: 'How many continents are there?', a: '7', w: ['5', '6', '8'] },
+      { q: 'What is the largest ocean?', a: 'Pacific', w: ['Atlantic', 'Indian', 'Arctic'] }
     ];
     this.currentQuestion = 0;
-    this.score = { player: 0, opponent: 0 };
+    this.playerScore = 0;
+    this.opponentScore = 0;
     this.gameOver = false;
+    this.answered = false;
     this.render();
   }
 
+  selectAnswer(answer) {
+    if (this.answered || this.gameOver) return;
+    this.answered = true;
+
+    const question = this.questions[this.currentQuestion];
+    const correct = answer === question.a;
+
+    if (correct) {
+      this.playerScore++;
+    }
+
+    this.onMove({ type: 'answer', qIdx: this.currentQuestion, correct });
+
+    setTimeout(() => {
+      this.currentQuestion++;
+      this.answered = false;
+
+      if (this.currentQuestion >= 5) {
+        this.gameOver = true;
+        if (this.playerScore > this.opponentScore) {
+          this.onGameEnd('win');
+        } else if (this.playerScore < this.opponentScore) {
+          this.onGameEnd('loss');
+        } else {
+          this.onGameEnd('draw');
+        }
+      } else {
+        this.render();
+      }
+    }, 800);
+  }
+
+  receivedAnswer(data) {
+    if (data.correct) {
+      this.opponentScore++;
+    }
+
+    this.currentQuestion++;
+
+    if (this.currentQuestion >= 5) {
+      this.gameOver = true;
+      if (this.playerScore > this.opponentScore) {
+        this.onGameEnd('win');
+      } else if (this.playerScore < this.opponentScore) {
+        this.onGameEnd('loss');
+      } else {
+        this.onGameEnd('draw');
+      }
+    } else {
+      this.render();
+    }
+  }
+
   render() {
-    if (this.currentQuestion >= this.questions.length) {
-      const winner = this.score.player > this.score.opponent ? 'win' : 
-                     this.score.player < this.score.opponent ? 'loss' : 'draw';
+    if (this.currentQuestion >= 5) {
       this.container.innerHTML = `
-        <div class="game-board trivia">
-          <div class="game-status">Game Over!</div>
-          <div class="score">Your Score: ${this.score.player}</div>
-          <div class="score">Opponent Score: ${this.score.opponent}</div>
-          <div class="result">${winner === 'win' ? 'YOU WIN!' : winner === 'loss' ? 'YOU LOSE!' : 'IT\'S A DRAW!'}</div>
+        <div class="game-container">
+          <h2>Trivia - Game Over!</h2>
+          <div class="game-status">Final Scores</div>
+          <div class="trivia-score">
+            <div>You: <strong>${this.playerScore}</strong></div>
+            <div>Opponent: <strong>${this.opponentScore}</strong></div>
+          </div>
         </div>
       `;
-      if (!this.gameOver) {
-        this.gameOver = true;
-        this.onGameEnd(winner);
-      }
       return;
     }
 
-    const question = this.questions[this.currentQuestion];
-    const answers = [question.a, ...question.w].sort(() => Math.random() - 0.5);
+    const q = this.questions[this.currentQuestion];
+    const answers = [q.a, ...q.w].sort(() => Math.random() - 0.5);
 
     this.container.innerHTML = `
-      <div class="game-board trivia">
-        <div class="score">You: ${this.score.player} | Opponent: ${this.score.opponent}</div>
-        <div class="question">${question.q}</div>
-        <div class="answers">
+      <div class="game-container">
+        <h2>Trivia - Question ${this.currentQuestion + 1}/5</h2>
+        <div class="game-status">You: ${this.playerScore} | Opponent: ${this.opponentScore}</div>
+        <div class="trivia-question">${q.q}</div>
+        <div class="trivia-answers">
           ${answers.map(ans => `
-            <button class="answer-btn" onclick="window.currentGame.selectAnswer('${ans}')">${ans}</button>
+            <button class="answer-btn" onclick="window.currentGame.selectAnswer('${ans}')"
+                    ${this.answered ? 'disabled' : ''}>
+              ${ans}
+            </button>
           `).join('')}
         </div>
       </div>
     `;
   }
+}
 
-  selectAnswer(ans) {
-    if (this.gameOver) return;
-    
-    const question = this.questions[this.currentQuestion];
-    const isCorrect = ans === question.a;
-    
-    if (isCorrect) {
-      this.score.player++;
-    }
-    
-    this.onMove({ type: 'answer', question: this.currentQuestion, correct: isCorrect });
-    this.currentQuestion++;
+class WordBattle {
+  constructor(container, onMove, onGameEnd, isPlayer1) {
+    this.container = container;
+    this.onMove = onMove;
+    this.onGameEnd = onGameEnd;
+    this.isPlayer1 = isPlayer1;
+    this.words = ['JAVASCRIPT', 'PROGRAMMING', 'DEVELOPER', 'FUNCTION', 'VARIABLE', 'NETWORK', 'WEBSOCKET', 'DATABASE'];
+    this.rounds = 4;
+    this.currentRound = 0;
+    this.playerScore = 0;
+    this.opponentScore = 0;
+    this.gameOver = false;
+    this.currentWord = this.words[Math.floor(Math.random() * this.words.length)];
+    this.answered = false;
     this.render();
+  }
+
+  submitAnswer() {
+    if (this.answered || this.gameOver) return;
+    this.answered = true;
+
+    const input = document.getElementById('word-input');
+    const answer = input.value.toUpperCase().trim();
+    const correct = answer === this.currentWord;
+
+    if (correct) {
+      this.playerScore++;
+    }
+
+    this.onMove({ type: 'word', correct });
+
+    setTimeout(() => {
+      this.currentRound++;
+      this.answered = false;
+
+      if (this.currentRound >= this.rounds) {
+        this.gameOver = true;
+        if (this.playerScore > this.opponentScore) {
+          this.onGameEnd('win');
+        } else if (this.playerScore < this.opponentScore) {
+          this.onGameEnd('loss');
+        } else {
+          this.onGameEnd('draw');
+        }
+      } else {
+        this.currentWord = this.words[Math.floor(Math.random() * this.words.length)];
+        this.render();
+      }
+    }, 800);
   }
 
   receivedAnswer(data) {
     if (data.correct) {
-      this.score.opponent++;
+      this.opponentScore++;
     }
-  }
-}
 
-class WordBattle {
-  constructor(container, onMove, onGameEnd) {
-    this.container = container;
-    this.onMove = onMove;
-    this.onGameEnd = onGameEnd;
-    this.rounds = 5;
-    this.currentRound = 0;
-    this.score = { player: 0, opponent: 0 };
-    this.words = ['JAVASCRIPT', 'WEBRTC', 'WEBSOCKET', 'FIREBASE', 'DATABASE', 'FUNCTION'];
-    this.currentWord = this.words[Math.floor(Math.random() * this.words.length)];
-    this.playerAnswer = '';
-    this.gameOver = false;
-    this.render();
+    this.currentRound++;
+
+    if (this.currentRound >= this.rounds) {
+      this.gameOver = true;
+      if (this.playerScore > this.opponentScore) {
+        this.onGameEnd('win');
+      } else if (this.playerScore < this.opponentScore) {
+        this.onGameEnd('loss');
+      } else {
+        this.onGameEnd('draw');
+      }
+    } else {
+      this.currentWord = this.words[Math.floor(Math.random() * this.words.length)];
+      this.render();
+    }
   }
 
   render() {
     if (this.currentRound >= this.rounds) {
-      const winner = this.score.player > this.score.opponent ? 'win' : 
-                     this.score.player < this.score.opponent ? 'loss' : 'draw';
       this.container.innerHTML = `
-        <div class="game-board word-battle">
-          <div class="game-status">Game Over!</div>
-          <div class="score">Your Score: ${this.score.player}</div>
-          <div class="score">Opponent Score: ${this.score.opponent}</div>
-          <div class="result">${winner === 'win' ? 'YOU WIN!' : winner === 'loss' ? 'YOU LOSE!' : 'IT\'S A DRAW!'}</div>
+        <div class="game-container">
+          <h2>Word Battle - Game Over!</h2>
+          <div class="game-status">Final Scores</div>
+          <div class="trivia-score">
+            <div>You: <strong>${this.playerScore}</strong></div>
+            <div>Opponent: <strong>${this.opponentScore}</strong></div>
+          </div>
         </div>
       `;
-      if (!this.gameOver) {
-        this.gameOver = true;
-        this.onGameEnd(winner);
-      }
       return;
     }
 
+    const half = Math.ceil(this.currentWord.length / 2);
+    const partial = this.currentWord.substring(0, half) + '*'.repeat(this.currentWord.length - half);
+
     this.container.innerHTML = `
-      <div class="game-board word-battle">
-        <div class="score">Round ${this.currentRound + 1}/${this.rounds}</div>
-        <div class="score">You: ${this.score.player} | Opponent: ${this.score.opponent}</div>
-        <div class="prompt">Spell this word: <strong>${this.currentWord.substring(0, Math.ceil(this.currentWord.length / 2))}...</strong></div>
-        <input type="text" id="word-input" placeholder="Type the full word" value="${this.playerAnswer}">
-        <button class="answer-btn" onclick="window.currentGame.submitWord()">Submit</button>
+      <div class="game-container">
+        <h2>Word Battle - Round ${this.currentRound + 1}/${this.rounds}</h2>
+        <div class="game-status">You: ${this.playerScore} | Opponent: ${this.opponentScore}</div>
+        <div class="word-prompt">Complete the word: <strong style="font-size: 1.3em">${partial}</strong></div>
+        <input type="text" id="word-input" placeholder="Type the full word"
+               onkeypress="if(event.key==='Enter') window.currentGame.submitAnswer()"
+               ${this.answered ? 'disabled' : ''}>
+        <button class="answer-btn" onclick="window.currentGame.submitAnswer()"
+                ${this.answered ? 'disabled' : ''}>Submit</button>
       </div>
     `;
-  }
 
-  submitWord() {
-    if (this.gameOver) return;
-    
-    const input = document.getElementById('word-input');
-    this.playerAnswer = input.value.toUpperCase();
-    const isCorrect = this.playerAnswer === this.currentWord;
-    
-    if (isCorrect) {
-      this.score.player++;
-    }
-    
-    this.onMove({ type: 'word', word: this.playerAnswer, correct: isCorrect });
-    this.currentRound++;
-    this.currentWord = this.words[Math.floor(Math.random() * this.words.length)];
-    this.playerAnswer = '';
-    this.render();
-  }
-
-  receivedWord(data) {
-    if (data.correct) {
-      this.score.opponent++;
-    }
+    setTimeout(() => {
+      const input = document.getElementById('word-input');
+      if (input && !this.answered) input.focus();
+    }, 100);
   }
 }
 
-class QuickDraw {
-  constructor(container, onMove, onGameEnd) {
+class RockPaperScissors {
+  constructor(container, onMove, onGameEnd, isPlayer1) {
     this.container = container;
     this.onMove = onMove;
     this.onGameEnd = onGameEnd;
+    this.isPlayer1 = isPlayer1;
     this.rounds = 3;
     this.currentRound = 0;
-    this.score = { player: 0, opponent: 0 };
-    this.prompts = ['Cat', 'House', 'Sun', 'Tree', 'Fish'];
-    this.currentPrompt = this.prompts[Math.floor(Math.random() * this.prompts.length)];
-    this.canvas = null;
-    this.isDrawing = false;
+    this.playerScore = 0;
+    this.opponentScore = 0;
     this.gameOver = false;
-    this.roundStartTime = Date.now();
+    this.playerMove = null;
+    this.opponentMove = null;
+    this.showResult = false;
     this.render();
-    this.setupCanvas();
+  }
+
+  makeMove(choice) {
+    if (this.showResult || this.gameOver) return;
+
+    this.playerMove = choice;
+    this.showResult = true;
+    this.onMove({ type: 'rps', choice });
+    this.render();
+
+    setTimeout(() => {
+      this.currentRound++;
+      this.showResult = false;
+      this.playerMove = null;
+      this.opponentMove = null;
+
+      if (this.currentRound >= this.rounds) {
+        this.gameOver = true;
+        if (this.playerScore > this.opponentScore) {
+          this.onGameEnd('win');
+        } else if (this.playerScore < this.opponentScore) {
+          this.onGameEnd('loss');
+        } else {
+          this.onGameEnd('draw');
+        }
+      } else {
+        this.render();
+      }
+    }, 1500);
+  }
+
+  receivedMove(data) {
+    this.opponentMove = data.choice;
+
+    if (this.playerMove) {
+      const result = this.compareChoices(this.playerMove, this.opponentMove);
+      if (result === 'win') this.playerScore++;
+      if (result === 'loss') this.opponentScore++;
+    }
+
+    this.render();
+  }
+
+  compareChoices(player, opponent) {
+    if (player === opponent) return 'tie';
+    if (player === 'rock' && opponent === 'scissors') return 'win';
+    if (player === 'paper' && opponent === 'rock') return 'win';
+    if (player === 'scissors' && opponent === 'paper') return 'win';
+    return 'loss';
   }
 
   render() {
     if (this.currentRound >= this.rounds) {
-      const winner = this.score.player > this.score.opponent ? 'win' : 
-                     this.score.player < this.score.opponent ? 'loss' : 'draw';
       this.container.innerHTML = `
-        <div class="game-board quick-draw">
-          <div class="game-status">Game Over!</div>
-          <div class="score">Your Score: ${this.score.player}</div>
-          <div class="score">Opponent Score: ${this.score.opponent}</div>
-          <div class="result">${winner === 'win' ? 'YOU WIN!' : winner === 'loss' ? 'YOU LOSE!' : 'IT\'S A DRAW!'}</div>
+        <div class="game-container">
+          <h2>Rock Paper Scissors - Game Over!</h2>
+          <div class="game-status">Final Scores</div>
+          <div class="trivia-score">
+            <div>You: <strong>${this.playerScore}</strong></div>
+            <div>Opponent: <strong>${this.opponentScore}</strong></div>
+          </div>
         </div>
       `;
-      if (!this.gameOver) {
-        this.gameOver = true;
-        this.onGameEnd(winner);
-      }
       return;
     }
 
-    this.container.innerHTML = `
-      <div class="game-board quick-draw">
-        <div class="score">Round ${this.currentRound + 1}/${this.rounds}</div>
-        <div class="score">You: ${this.score.player} | Opponent: ${this.score.opponent}</div>
-        <div class="prompt">Draw: <strong>${this.currentPrompt}</strong></div>
-        <canvas id="draw-canvas" width="400" height="300"></canvas>
-        <div class="controls">
-          <button onclick="window.currentGame.clearCanvas()">Clear</button>
-          <button onclick="window.currentGame.submitDrawing()">Submit</button>
+    const choices = ['rock', 'paper', 'scissors'];
+    const emojis = { rock: '✊', paper: '✋', scissors: '✌️' };
+
+    let resultHtml = '';
+    if (this.showResult && this.playerMove && this.opponentMove) {
+      const result = this.compareChoices(this.playerMove, this.opponentMove);
+      const resultText = result === 'win' ? '✓ You Won!' : result === 'loss' ? '✗ You Lost!' : '= Tie!';
+      resultHtml = `
+        <div style="margin: 20px 0; font-size: 1.2em; font-weight: bold; color: #667eea;">
+          ${resultText}
         </div>
+      `;
+    }
+
+    this.container.innerHTML = `
+      <div class="game-container">
+        <h2>Rock Paper Scissors - Round ${this.currentRound + 1}/${this.rounds}</h2>
+        <div class="game-status">You: ${this.playerScore} | Opponent: ${this.opponentScore}</div>
+        ${resultHtml}
+        ${this.showResult ? `
+          <div style="display: flex; justify-content: space-around; margin: 20px 0; font-size: 2em;">
+            <div>You: ${emojis[this.playerMove]}</div>
+            <div>vs</div>
+            <div>Opponent: ${emojis[this.opponentMove] || '?'}</div>
+          </div>
+        ` : `
+          <div class="rps-choices">
+            ${choices.map(choice => `
+              <button class="choice-btn" onclick="window.currentGame.makeMove('${choice}')"
+                      ${this.showResult ? 'disabled' : ''}>
+                <div style="font-size: 2em;">${emojis[choice]}</div>
+                <div>${choice}</div>
+              </button>
+            `).join('')}
+          </div>
+        `}
       </div>
     `;
-
-    this.setupCanvas();
   }
+}
 
-  setupCanvas() {
-    setTimeout(() => {
-      this.canvas = document.getElementById('draw-canvas');
-      if (!this.canvas) return;
-      
-      const ctx = this.canvas.getContext('2d');
-      ctx.fillStyle = 'white';
-      ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-      ctx.strokeStyle = 'black';
-      ctx.lineWidth = 2;
-      ctx.lineCap = 'round';
-
-      let isDrawing = false;
-
-      this.canvas.addEventListener('mousedown', (e) => {
-        isDrawing = true;
-        const rect = this.canvas.getBoundingClientRect();
-        ctx.beginPath();
-        ctx.moveTo(e.clientX - rect.left, e.clientY - rect.top);
-      });
-
-      this.canvas.addEventListener('mousemove', (e) => {
-        if (!isDrawing) return;
-        const rect = this.canvas.getBoundingClientRect();
-        ctx.lineTo(e.clientX - rect.left, e.clientY - rect.top);
-        ctx.stroke();
-      });
-
-      this.canvas.addEventListener('mouseup', () => { isDrawing = false; });
-      this.canvas.addEventListener('mouseout', () => { isDrawing = false; });
-    }, 0);
-  }
-
-  clearCanvas() {
-    if (!this.canvas) return;
-    const ctx = this.canvas.getContext('2d');
-    ctx.fillStyle = 'white';
-    ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-  }
-
-  submitDrawing() {
-    if (this.gameOver) return;
-    
-    const imageData = this.canvas.toDataURL('image/png');
-    this.score.player++;
-    this.onMove({ type: 'drawing', image: imageData });
-    
-    this.currentRound++;
-    this.currentPrompt = this.prompts[Math.floor(Math.random() * this.prompts.length)];
+class SimpleGuessing {
+  constructor(container, onMove, onGameEnd, isPlayer1) {
+    this.container = container;
+    this.onMove = onMove;
+    this.onGameEnd = onGameEnd;
+    this.isPlayer1 = isPlayer1;
+    this.rounds = 3;
+    this.currentRound = 0;
+    this.playerScore = 0;
+    this.opponentScore = 0;
+    this.gameOver = false;
+    this.playerGuess = null;
+    this.targetNumber = Math.floor(Math.random() * 10) + 1;
     this.render();
   }
 
-  receivedDrawing(data) {
-    this.score.opponent++;
+  makeGuess(num) {
+    if (this.gameOver || this.playerGuess !== null) return;
+
+    this.playerGuess = num;
+    const correct = num === this.targetNumber;
+
+    if (correct) {
+      this.playerScore++;
+    }
+
+    this.onMove({ type: 'guess', number: num, correct });
+    this.render();
+
+    setTimeout(() => {
+      this.currentRound++;
+      this.playerGuess = null;
+      this.targetNumber = Math.floor(Math.random() * 10) + 1;
+
+      if (this.currentRound >= this.rounds) {
+        this.gameOver = true;
+        if (this.playerScore > this.opponentScore) {
+          this.onGameEnd('win');
+        } else if (this.playerScore < this.opponentScore) {
+          this.onGameEnd('loss');
+        } else {
+          this.onGameEnd('draw');
+        }
+      } else {
+        this.render();
+      }
+    }, 1500);
+  }
+
+  receivedGuess(data) {
+    if (data.correct) {
+      this.opponentScore++;
+    }
+
+    this.currentRound++;
+
+    if (this.currentRound >= this.rounds) {
+      this.gameOver = true;
+      if (this.playerScore > this.opponentScore) {
+        this.onGameEnd('win');
+      } else if (this.playerScore < this.opponentScore) {
+        this.onGameEnd('loss');
+      } else {
+        this.onGameEnd('draw');
+      }
+    } else {
+      this.targetNumber = Math.floor(Math.random() * 10) + 1;
+      this.render();
+    }
+  }
+
+  render() {
+    if (this.currentRound >= this.rounds) {
+      this.container.innerHTML = `
+        <div class="game-container">
+          <h2>Number Guessing - Game Over!</h2>
+          <div class="game-status">Final Scores</div>
+          <div class="trivia-score">
+            <div>You: <strong>${this.playerScore}</strong></div>
+            <div>Opponent: <strong>${this.opponentScore}</strong></div>
+          </div>
+        </div>
+      `;
+      return;
+    }
+
+    const buttons = [];
+    for (let i = 1; i <= 10; i++) {
+      buttons.push(`
+        <button class="guess-btn" onclick="window.currentGame.makeGuess(${i})"
+                ${this.playerGuess !== null ? 'disabled' : ''}>
+          ${i}
+        </button>
+      `);
+    }
+
+    const feedback = this.playerGuess !== null
+      ? (this.playerGuess === this.targetNumber ? '✓ Correct!' : '✗ Wrong! The answer was: ' + this.targetNumber)
+      : 'Guess a number 1-10';
+
+    this.container.innerHTML = `
+      <div class="game-container">
+        <h2>Number Guessing - Round ${this.currentRound + 1}/${this.rounds}</h2>
+        <div class="game-status">You: ${this.playerScore} | Opponent: ${this.opponentScore}</div>
+        <div style="margin: 20px 0; font-size: 1.1em; color: #333;">${feedback}</div>
+        <div class="guess-grid">
+          ${buttons.join('')}
+        </div>
+      </div>
+    `;
   }
 }
