@@ -178,47 +178,48 @@ function handleGameStarted(message) {
  }
 
 function initializeGame(game) {
-  const gameArea = document.getElementById('game-area');
-  
-  const onGameMove = (moveData) => {
-    sendMessage({
-      type: 'GAME_MOVE',
-      move: moveData
-    });
-  };
-  
-  const onGameEnd = (result) => {
-    setTimeout(() => {
-      const resultText = result === 'win' ? '✓ You Won! 🎉' : result === 'loss' ? '✗ You Lost 😢' : '= Draw 🤝';
-      alert(`Game Over!\n${resultText}`);
-      cleanup();
-      switchScreen('lobby');
-    }, 500);
-  };
-  
-  switch(game) {
-    case 'Tic Tac Toe':
-      currentGame = new TicTacToe(gameArea, onGameMove, onGameEnd, isPlayer1);
-      break;
-    case 'Connect Four':
-      currentGame = new ConnectFour(gameArea, onGameMove, onGameEnd, isPlayer1);
-      break;
-    case 'Trivia':
-      currentGame = new Trivia(gameArea, onGameMove, onGameEnd, isPlayer1);
-      break;
-    case 'Word Battle':
-      currentGame = new WordBattle(gameArea, onGameMove, onGameEnd, isPlayer1);
-      break;
-    case 'Rock Paper Scissors':
-      currentGame = new RockPaperScissors(gameArea, onGameMove, onGameEnd, isPlayer1);
-      break;
-    case 'Number Guessing':
-      currentGame = new SimpleGuessing(gameArea, onGameMove, onGameEnd, isPlayer1);
-      break;
-    default:
-      gameArea.innerHTML = '<p>Game not implemented yet</p>';
-  }
-}
+   const gameArea = document.getElementById('game-area');
+   gameArea.innerHTML = ''; // Clear previous content
+   
+   const onGameMove = (moveData) => {
+     sendMessage({
+       type: 'GAME_MOVE',
+       move: moveData
+     });
+   };
+   
+   const onGameEnd = (result) => {
+     setTimeout(() => {
+       const resultText = result === 'win' ? '✓ You Won! 🎉' : result === 'loss' ? '✗ You Lost 😢' : '= Draw 🤝';
+       alert(`Game Over!\n${resultText}`);
+       cleanup();
+       switchScreen('lobby');
+     }, 500);
+   };
+   
+   switch(game) {
+     case 'Tic Tac Toe':
+       currentGame = new TicTacToe(gameArea, onGameMove, onGameEnd, isPlayer1);
+       break;
+     case 'Connect Four':
+       currentGame = new ConnectFour(gameArea, onGameMove, onGameEnd, isPlayer1);
+       break;
+     case 'Trivia':
+       currentGame = new Trivia(gameArea, onGameMove, onGameEnd, isPlayer1);
+       break;
+     case 'Word Battle':
+       currentGame = new WordBattle(gameArea, onGameMove, onGameEnd, isPlayer1);
+       break;
+     case 'Rock Paper Scissors':
+       currentGame = new RockPaperScissors(gameArea, onGameMove, onGameEnd, isPlayer1);
+       break;
+     case 'Number Guessing':
+       currentGame = new SimpleGuessing(gameArea, onGameMove, onGameEnd, isPlayer1);
+       break;
+     default:
+       gameArea.innerHTML = '<p>Game not implemented yet</p>';
+   }
+ }
 
 function handleGameMove(message) {
    if (!currentGame) return;

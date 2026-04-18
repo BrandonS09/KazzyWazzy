@@ -1,5 +1,10 @@
 // Fully Functional Multiplayer Game Implementations
 
+// Export for module systems
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {};
+}
+
 class TicTacToe {
   constructor(container, onMove, onGameEnd, isPlayer1) {
     this.container = container;
