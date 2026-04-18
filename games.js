@@ -294,229 +294,592 @@ class ConnectFour {
   }
 }
 
-class Trivia {
+class Checkers {
   constructor(container, onMove, onGameEnd, isPlayer1) {
     this.container = container;
     this.onMove = onMove;
     this.onGameEnd = onGameEnd;
     this.isPlayer1 = isPlayer1;
-    this.questions = [
-      { q: 'What is the capital of France?', a: 'Paris', w: ['London', 'Berlin', 'Madrid'] },
-      { q: 'What is 2 + 2?', a: '4', w: ['3', '5', '6'] },
-      { q: 'What is the largest planet?', a: 'Jupiter', w: ['Saturn', 'Mars', 'Venus'] },
-      { q: 'What color is the sky?', a: 'Blue', w: ['Red', 'Green', 'Yellow'] },
-      { q: 'What is the smallest prime number?', a: '2', w: ['1', '3', '0'] },
-      { q: 'What is the capital of Spain?', a: 'Madrid', w: ['Barcelona', 'Seville', 'Valencia'] },
-      { q: 'How many continents are there?', a: '7', w: ['5', '6', '8'] },
-      { q: 'What is the largest ocean?', a: 'Pacific', w: ['Atlantic', 'Indian', 'Arctic'] }
-    ];
-    this.currentQuestion = 0;
-    this.playerScore = 0;
-    this.opponentScore = 0;
+    this.playerColor = isPlayer1 ? 'red' : 'black';
+    this.opponentColor = isPlayer1 ? 'black' : 'red';
+    this.board = this.initializeBoard();
+    this.currentTurn = 'red'; // Red generally goes first
     this.gameOver = false;
-    this.answered = false;
+    this.selectedPiece = null;
+    this.winner = null;
+    this.mustJump = false;
     this.render();
   }
 
-  selectAnswer(answer) {
-    if (this.answered || this.gameOver) return;
-    this.answered = true;
-
-    const question = this.questions[this.currentQuestion];
-    const correct = answer === question.a;
-
-    if (correct) {
-      this.playerScore++;
-    }
-
-    this.onMove({ type: 'answer', qIdx: this.currentQuestion, correct });
-
-    setTimeout(() => {
-      this.currentQuestion++;
-      this.answered = false;
-
-      if (this.currentQuestion >= 5) {
-        this.gameOver = true;
-        if (this.playerScore > this.opponentScore) {
-          this.onGameEnd('win');
-        } else if (this.playerScore < this.opponentScore) {
-          this.onGameEnd('loss');
-        } else {
-          this.onGameEnd('draw');
+  initializeBoard() {
+    const board = Array(8).fill(null).map(() => Array(8).fill(null));
+    for (let r = 0; r < 8; r++) {
+      for (let c = 0; c < 8; c++) {
+        if ((r + c) % 2 === 1) { // Dark squares only
+          if (r < 3) board[r][c] = { color: 'black', isKing: false };
+          else if (r > 4) board[r][c] = { color: 'red', isKing: false };
         }
-      } else {
-        this.render();
       }
-    }, 800);
+    }
+    return board;
   }
 
-  receivedAnswer(data) {
-    if (data.correct) {
-      this.opponentScore++;
+  handleSquareClick(r, c) {
+    if (this.gameOver || this.currentTurn !== this.playerColor) return;
+
+    const piece = this.board[r][c];
+
+    // If a piece is already selected, check if clicking a valid move target
+    if (this.selectedPiece) {
+      if (piece && piece.color === this.playerColor) {
+        // Switch selection
+        this.selectedPiece = { r, c };
+        this.render();
+        return;
+      }
+      
+      const moves = this.getValidMoves(this.selectedPiece.r, this.selectedPiece.c);
+      const move = moves.find(m => m.r === r && m.c === c);
+      
+      if (move) {
+        // Execute move
+        const fromR = this.selectedPiece.r;
+        const fromC = this.selectedPiece.c;
+        const pieceMoved = this.board[fromR][fromC];
+        
+        // Move piece
+        this.board[r][c] = pieceMoved;
+        this.board[fromR][fromC] = null;
+        
+        let didJump = false;
+        if (move.jump) {
+          this.board[move.jump.r][move.jump.c] = null; // Remove captured piece
+          didJump = true;
+        }
+
+        // Kinging
+        let becameKing = false;
+        if (pieceMoved.color === 'red' && r === 0 && !pieceMoved.isKing) {
+          pieceMoved.isKing = true;
+          becameKing = true;
+        } else if (pieceMoved.color === 'black' && r === 7 && !pieceMoved.isKing) {
+          pieceMoved.isKing = true;
+          becameKing = true;
+        }
+
+        // Check for double jumps
+        let doubleJumpAvailable = false;
+        if (didJump && !becameKing) {
+          const furtherMoves = this.getValidMoves(r, c).filter(m => m.jump);
+          if (furtherMoves.length > 0) {
+            doubleJumpAvailable = true;
+            this.selectedPiece = { r, c }; // Keep selection on jumping piece
+          }
+        }
+
+        if (!doubleJumpAvailable) {
+          this.currentTurn = this.opponentColor;
+          this.selectedPiece = null;
+        }
+
+        this.render();
+        
+        // Check game over
+        const winner = this.checkWinner();
+        if (winner) {
+          this.endGame(winner);
+        }
+
+        // Broadcast move
+        this.onMove({ 
+          type: 'checkers_move', 
+          from: {r: fromR, c: fromC}, 
+          to: {r, c}, 
+          didJump, 
+          doubleJumpAvailable,
+          gameState: winner ? (winner === this.playerColor ? 'win' : 'loss') : null
+        });
+        return;
+      }
     }
 
-    this.currentQuestion++;
-
-    if (this.currentQuestion >= 5) {
-      this.gameOver = true;
-      if (this.playerScore > this.opponentScore) {
-        this.onGameEnd('win');
-      } else if (this.playerScore < this.opponentScore) {
-        this.onGameEnd('loss');
-      } else {
-        this.onGameEnd('draw');
-      }
-    } else {
+    // Select piece
+    if (piece && piece.color === this.playerColor) {
+      this.selectedPiece = { r, c };
       this.render();
     }
   }
 
-  render() {
-    if (this.currentQuestion >= 5) {
-      this.container.innerHTML = `
-        <div class="game-container">
-          <h2>Trivia - Game Over!</h2>
-          <div class="game-status">Final Scores</div>
-          <div class="trivia-score">
-            <div>You: <strong>${this.playerScore}</strong></div>
-            <div>Opponent: <strong>${this.opponentScore}</strong></div>
-          </div>
-        </div>
-      `;
-      return;
+  receivedMove(data) {
+    if (this.gameOver) return;
+
+    if (data.type === 'checkers_move') {
+      const { from, to, didJump, doubleJumpAvailable, gameState } = data;
+      const pieceMoved = this.board[from.r][from.c];
+      
+      this.board[to.r][to.c] = pieceMoved;
+      this.board[from.r][from.c] = null;
+
+      if (didJump) {
+        const jumpR = (from.r + to.r) / 2;
+        const jumpC = (from.c + to.c) / 2;
+        this.board[jumpR][jumpC] = null;
+      }
+
+      // Kinging
+      if (pieceMoved.color === 'red' && to.r === 0) pieceMoved.isKing = true;
+      if (pieceMoved.color === 'black' && to.r === 7) pieceMoved.isKing = true;
+
+      if (!doubleJumpAvailable) {
+        this.currentTurn = this.playerColor;
+      }
+
+      this.render();
+
+      if (gameState === 'win') {
+        this.endGame(this.opponentColor);
+      } else if (gameState === 'loss') {
+        this.endGame(this.playerColor);
+      }
+    }
+  }
+
+  getValidMoves(r, c) {
+    const piece = this.board[r][c];
+    if (!piece) return [];
+    
+    const moves = [];
+    const directions = [];
+    
+    // Red moves up (-1), Black moves down (+1)
+    if (piece.color === 'red' || piece.isKing) directions.push(-1);
+    if (piece.color === 'black' || piece.isKing) directions.push(1);
+
+    const cols = [-1, 1];
+
+    for (let dRow of directions) {
+      for (let dCol of cols) {
+        const nr = r + dRow;
+        const nc = c + dCol;
+
+        // Normal move
+        if (this.isValidSquare(nr, nc) && this.board[nr][nc] === null) {
+          moves.push({ r: nr, c: nc });
+        }
+
+        // Jump move
+        const jr = r + 2 * dRow;
+        const jc = c + 2 * dCol;
+        if (this.isValidSquare(jr, jc) && this.board[jr][jc] === null) {
+           const midPiece = this.board[nr][nc];
+           if (midPiece && midPiece.color !== piece.color) {
+             moves.push({ r: jr, c: jc, jump: {r: nr, c: nc} });
+           }
+        }
+      }
     }
 
-    const q = this.questions[this.currentQuestion];
-    const answers = [q.a, ...q.w].sort(() => Math.random() - 0.5);
+    // Force jumps if any exist for this piece (simplified forced jump)
+    const jumps = moves.filter(m => m.jump);
+    if (jumps.length > 0) return jumps;
+
+    return moves;
+  }
+
+  isValidSquare(r, c) {
+    return r >= 0 && r < 8 && c >= 0 && c < 8;
+  }
+
+  checkWinner() {
+    let redCount = 0;
+    let blackCount = 0;
+    for(let r=0; r<8; r++){
+      for(let c=0; c<8; c++){
+          if(this.board[r][c]?.color === 'red') redCount++;
+          if(this.board[r][c]?.color === 'black') blackCount++;
+      }
+    }
+    if (redCount === 0) return 'black';
+    if (blackCount === 0) return 'red';
+    return null;
+  }
+
+  endGame(winnerColor) {
+    this.gameOver = true;
+    this.winner = winnerColor;
+    const result = winnerColor === this.playerColor ? 'win' : 'loss';
+    this.render();
+    setTimeout(() => this.onGameEnd(result), 500);
+  }
+
+  render() {
+    const isMyTurn = this.currentTurn === this.playerColor && !this.gameOver;
+    const statusText = this.gameOver
+      ? (this.winner === this.playerColor ? '✓ You Won!' : '✗ You Lost!')
+      : (isMyTurn ? '▶ Your Turn' : '⏳ Opponent Turn');
+
+    let boardHtml = '';
+    
+    // We should render board from Player 1's perspective (Red at bottom)
+    // If Player 2 (Black), maybe rotate board? Let's keep it fixed for simplicity.
+    const isP2 = !this.isPlayer1;
+
+    for (let r = 0; r < 8; r++) {
+      let actualR = isP2 ? 7 - r : r;
+      let rowHtml = '';
+      for (let c = 0; c < 8; c++) {
+        let actualC = isP2 ? 7 - c : c;
+        const isDark = (actualR + actualC) % 2 === 1;
+        const piece = this.board[actualR][actualC];
+        
+        let highlight = '';
+        if (this.selectedPiece && this.selectedPiece.r === actualR && this.selectedPiece.c === actualC) {
+          highlight = 'border: 2px solid yellow;';
+        }
+
+        let pieceHtml = '';
+        if (piece) {
+            const isKingStr = piece.isKing ? 'K' : '';
+            pieceHtml = `<div class="checkers-piece ${piece.color}" style="${highlight}">${isKingStr}</div>`;
+        }
+
+        // Check if an available move target
+        let targetDot = '';
+        if (this.selectedPiece && isMyTurn) {
+           const moves = this.getValidMoves(this.selectedPiece.r, this.selectedPiece.c);
+           if (moves.find(m => m.r === actualR && m.c === actualC)) {
+               targetDot = `<div class="move-dot"></div>`;
+           }
+        }
+
+        rowHtml += `<div class="checkers-square ${isDark ? 'dark' : 'light'}" 
+             onclick="window.currentGame.handleSquareClick(${actualR}, ${actualC})">
+          ${pieceHtml}
+          ${targetDot}
+        </div>`;
+      }
+      boardHtml += `<div class="checkers-row">${rowHtml}</div>`;
+    }
 
     this.container.innerHTML = `
       <div class="game-container">
-        <h2>Trivia - Question ${this.currentQuestion + 1}/5</h2>
-        <div class="game-status">You: ${this.playerScore} | Opponent: ${this.opponentScore}</div>
-        <div class="trivia-question">${q.q}</div>
-        <div class="trivia-answers">
-          ${answers.map(ans => `
-            <button class="answer-btn" onclick="window.currentGame.selectAnswer('${ans}')"
-                    ${this.answered ? 'disabled' : ''}>
-              ${ans}
-            </button>
-          `).join('')}
+        <h2>Checkers</h2>
+        <div class="game-status">${statusText}</div>
+        <div class="checkers-board ${isP2 ? 'rotated' : ''}">
+          ${boardHtml}
         </div>
       </div>
     `;
   }
 }
 
-class WordBattle {
+class Chess {
   constructor(container, onMove, onGameEnd, isPlayer1) {
     this.container = container;
     this.onMove = onMove;
     this.onGameEnd = onGameEnd;
     this.isPlayer1 = isPlayer1;
-    this.words = ['JAVASCRIPT', 'PROGRAMMING', 'DEVELOPER', 'FUNCTION', 'VARIABLE', 'NETWORK', 'WEBSOCKET', 'DATABASE'];
-    this.rounds = 4;
-    this.currentRound = 0;
-    this.playerScore = 0;
-    this.opponentScore = 0;
+    this.playerColor = isPlayer1 ? 'white' : 'black';
+    this.opponentColor = isPlayer1 ? 'black' : 'white';
+    this.board = this.initializeBoard();
+    this.currentTurn = 'white';
     this.gameOver = false;
-    this.currentWord = this.words[Math.floor(Math.random() * this.words.length)];
-    this.answered = false;
+    this.selectedSquare = null;
+    this.lastDoublePawnMove = null; // for En Passant
+    this.castlingStatus = {
+      white: { moved: false, kingSideRookMoved: false, queenSideRookMoved: false },
+      black: { moved: false, kingSideRookMoved: false, queenSideRookMoved: false }
+    };
+    
+    // Set global reference early so render callbacks can find it
+    window.currentGame = this;
+    
     this.render();
   }
 
-  submitAnswer() {
-    if (this.answered || this.gameOver) return;
-    this.answered = true;
-
-    const input = document.getElementById('word-input');
-    const answer = input.value.toUpperCase().trim();
-    const correct = answer === this.currentWord;
-
-    if (correct) {
-      this.playerScore++;
+  initializeBoard() {
+    const board = Array(8).fill(null).map(() => Array(8).fill(null));
+    const layout = ['R', 'N', 'B', 'Q', 'K', 'B', 'N', 'R'];
+    
+    // Black pieces (top)
+    for (let i = 0; i < 8; i++) {
+      board[0][i] = { type: layout[i], color: 'black' };
+      board[1][i] = { type: 'P', color: 'black' };
     }
-
-    this.onMove({ type: 'word', correct });
-
-    setTimeout(() => {
-      this.currentRound++;
-      this.answered = false;
-
-      if (this.currentRound >= this.rounds) {
-        this.gameOver = true;
-        if (this.playerScore > this.opponentScore) {
-          this.onGameEnd('win');
-        } else if (this.playerScore < this.opponentScore) {
-          this.onGameEnd('loss');
-        } else {
-          this.onGameEnd('draw');
-        }
-      } else {
-        this.currentWord = this.words[Math.floor(Math.random() * this.words.length)];
-        this.render();
-      }
-    }, 800);
+    
+    // White pieces (bottom)
+    for (let i = 0; i < 8; i++) {
+      board[6][i] = { type: 'P', color: 'white' };
+      board[7][i] = { type: layout[i], color: 'white' };
+    }
+    
+    return board;
   }
 
-  receivedAnswer(data) {
-    if (data.correct) {
-      this.opponentScore++;
-    }
+  handleSquareClick(r, c) {
+    if (this.gameOver || this.currentTurn !== this.playerColor) return;
 
-    this.currentRound++;
+    if (this.selectedSquare) {
+      if (this.selectedSquare.r === r && this.selectedSquare.c === c) {
+        this.selectedSquare = null;
+        this.render();
+        return;
+      }
 
-    if (this.currentRound >= this.rounds) {
-      this.gameOver = true;
-      if (this.playerScore > this.opponentScore) {
-        this.onGameEnd('win');
-      } else if (this.playerScore < this.opponentScore) {
-        this.onGameEnd('loss');
-      } else {
-        this.onGameEnd('draw');
+      const moves = this.getLegalMoves(this.selectedSquare.r, this.selectedSquare.c);
+      const move = moves.find(m => m.r === r && m.c === c);
+
+      if (move) {
+        this.executeMove(this.selectedSquare.r, this.selectedSquare.c, r, c, move);
+        return;
+      }
+
+      const piece = this.board[r][c];
+      if (piece && piece.color === this.playerColor) {
+        this.selectedSquare = { r, c };
+        this.render();
       }
     } else {
-      this.currentWord = this.words[Math.floor(Math.random() * this.words.length)];
-      this.render();
+      const piece = this.board[r][c];
+      if (piece && piece.color === this.playerColor) {
+        this.selectedSquare = { r, c };
+        this.render();
+      }
     }
+  }
+
+  executeMove(fromR, fromC, toR, toC, moveOptions = {}) {
+    const piece = this.board[fromR][fromC];
+
+    // Handle special moves
+    if (moveOptions.isEnPassant && this.lastDoublePawnMove) {
+      this.board[this.lastDoublePawnMove.r][this.lastDoublePawnMove.c] = null;
+    }
+
+    if (moveOptions.isCastling) {
+      const rookFromC = toC === 6 ? 7 : 0;
+      const rookToC = toC === 6 ? 5 : 3;
+      const rook = this.board[fromR][rookFromC];
+      this.board[fromR][rookToC] = rook;
+      this.board[fromR][rookFromC] = null;
+    }
+
+    // Actual move
+    this.board[toR][toC] = piece;
+    this.board[fromR][fromC] = null;
+
+    // Promotion
+    if (piece.type === 'P' && (toR === 0 || toR === 7)) {
+      piece.type = 'Q';
+    }
+
+    // Update statuses
+    if (piece.type === 'K') this.castlingStatus[piece.color].moved = true;
+    if (piece.type === 'R') {
+      if (fromC === 0) this.castlingStatus[piece.color].queenSideRookMoved = true;
+      if (fromC === 7) this.castlingStatus[piece.color].kingSideRookMoved = true;
+    }
+    this.lastDoublePawnMove = (piece.type === 'P' && Math.abs(toR - fromR) === 2) ? { r: toR, c: toC } : null;
+
+    this.currentTurn = this.currentTurn === 'white' ? 'black' : 'white';
+    this.selectedSquare = null;
+
+    const winner = this.checkGameEndStatus();
+    this.onMove({ 
+      type: 'chess_move', 
+      from: { r: fromR, c: fromC }, 
+      to: { r: toR, c: toC }, 
+      options: moveOptions,
+      gameState: winner ? (winner === this.playerColor ? 'win' : winner === 'draw' ? 'draw' : 'loss') : null
+    });
+
+    this.render();
+    if (winner) {
+      setTimeout(() => this.onGameEnd(winner === this.playerColor ? 'win' : winner === 'draw' ? 'draw' : 'loss'), 500);
+    }
+  }
+
+  receivedMove(data) {
+    if (this.gameOver) return;
+    if (data.type === 'chess_move') {
+      const { from, to, options, gameState } = data;
+      const piece = this.board[from.r][from.c];
+
+      if (options.isEnPassant && this.lastDoublePawnMove) {
+        this.board[this.lastDoublePawnMove.r][this.lastDoublePawnMove.c] = null;
+      }
+      if (options.isCastling) {
+        const rookFromC = to.c === 6 ? 7 : 0;
+        const rookToC = to.c === 6 ? 5 : 3;
+        this.board[from.r][rookToC] = this.board[from.r][rookFromC];
+        this.board[from.r][rookFromC] = null;
+      }
+
+      this.board[to.r][to.c] = piece;
+      this.board[from.r][from.c] = null;
+
+      if (piece.type === 'P' && (to.r === 0 || to.r === 7)) piece.type = 'Q';
+      if (piece.type === 'K') this.castlingStatus[piece.color].moved = true;
+      if (piece.type === 'R') {
+        if (from.c === 0) this.castlingStatus[piece.color].queenSideRookMoved = true;
+        if (from.c === 7) this.castlingStatus[piece.color].kingSideRookMoved = true;
+      }
+      this.lastDoublePawnMove = (piece.type === 'P' && Math.abs(to.r - from.r) === 2) ? { r: to.r, c: to.c } : null;
+
+      this.currentTurn = this.playerColor;
+      this.render();
+      if (gameState) {
+        this.gameOver = true;
+        setTimeout(() => this.onGameEnd(gameState === 'win' ? 'loss' : gameState === 'loss' ? 'win' : 'draw'), 500);
+      }
+    }
+  }
+
+  getLegalMoves(r, c) {
+    const pseudoMoves = this.getPseudoLegalMoves(r, c);
+    return pseudoMoves.filter(m => {
+      const originalPiece = this.board[r][c];
+      const targetPiece = this.board[m.r][m.c];
+      this.board[m.r][m.c] = originalPiece;
+      this.board[r][c] = null;
+      let epPawn = null;
+      if (m.isEnPassant && this.lastDoublePawnMove) {
+        epPawn = this.board[this.lastDoublePawnMove.r][this.lastDoublePawnMove.c];
+        this.board[this.lastDoublePawnMove.r][this.lastDoublePawnMove.c] = null;
+      }
+      const inCheck = this.isKingInCheck(originalPiece.color);
+      this.board[r][c] = originalPiece;
+      this.board[m.r][m.c] = targetPiece;
+      if (m.isEnPassant && this.lastDoublePawnMove) {
+        this.board[this.lastDoublePawnMove.r][this.lastDoublePawnMove.c] = epPawn;
+      }
+      return !inCheck;
+    });
+  }
+
+  getPseudoLegalMoves(r, c, includeCastling = true) {
+    const piece = this.board[r][c];
+    if (!piece) return [];
+    const moves = [];
+    const opponent = piece.color === 'white' ? 'black' : 'white';
+
+    const addMove = (nr, nc, options = {}) => {
+      if (nr >= 0 && nr < 8 && nc >= 0 && nc < 8) {
+        const target = this.board[nr][nc];
+        if (!target || target.color === opponent) {
+          moves.push({ r: nr, c: nc, ...options });
+          return !target;
+        }
+      }
+      return false;
+    };
+
+    switch (piece.type) {
+      case 'P':
+        const dir = piece.color === 'white' ? -1 : 1;
+        if (this.board[r + dir]?.[c] === null) {
+          moves.push({ r: r + dir, c: c });
+          if (((piece.color === 'white' && r === 6) || (piece.color === 'black' && r === 1)) && this.board[r + 2 * dir]?.[c] === null) {
+            moves.push({ r: r + 2 * dir, c: c });
+          }
+        }
+        for (let dc of [-1, 1]) {
+          const target = this.board[r + dir]?.[c + dc];
+          if (target && target.color === opponent) moves.push({ r: r + dir, c: c + dc });
+          if (!target && this.lastDoublePawnMove && this.lastDoublePawnMove.r === r && this.lastDoublePawnMove.c === c + dc) {
+            moves.push({ r: r + dir, c: c + dc, isEnPassant: true });
+          }
+        }
+        break;
+      case 'R': this.addSlidingMoves(moves, r, c, [[1, 0], [-1, 0], [0, 1], [0, -1]]); break;
+      case 'B': this.addSlidingMoves(moves, r, c, [[1, 1], [1, -1], [-1, 1], [-1, -1]]); break;
+      case 'Q': this.addSlidingMoves(moves, r, c, [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]); break;
+      case 'N': [[2, 1], [2, -1], [-2, 1], [-2, -1], [1, 2], [1, -2], [-1, 2], [-1, -2]].forEach(([dr, dc]) => addMove(r + dr, c + dc)); break;
+      case 'K':
+        [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]].forEach(([dr, dc]) => addMove(r + dr, c + dc));
+        if (includeCastling && !this.castlingStatus[piece.color].moved && !this.isKingInCheck(piece.color)) {
+          if (!this.castlingStatus[piece.color].kingSideRookMoved && !this.board[r][c+1] && !this.board[r][c+2] && !this.isSquareUnderAttack(r, c+1, opponent)) moves.push({ r, c: c+2, isCastling: true });
+          if (!this.castlingStatus[piece.color].queenSideRookMoved && !this.board[r][c-1] && !this.board[r][c-2] && !this.board[r][c-3] && !this.isSquareUnderAttack(r, c-1, opponent)) moves.push({ r, c: c-2, isCastling: true });
+        }
+        break;
+    }
+    return moves;
+  }
+
+  addSlidingMoves(moves, r, c, directions) {
+    const piece = this.board[r][c];
+    directions.forEach(([dr, dc]) => {
+      let nr = r + dr, nc = c + dc;
+      while (nr >= 0 && nr < 8 && nc >= 0 && nc < 8) {
+        const target = this.board[nr][nc];
+        if (!target) { moves.push({ r: nr, c: nc }); } else {
+          if (target.color !== piece.color) moves.push({ r: nr, c: nc });
+          break;
+        }
+        nr += dr; nc += dc;
+      }
+    });
+  }
+
+  isKingInCheck(color) {
+    let kr, kc;
+    for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+      const p = this.board[r][c];
+      if (p && p.type === 'K' && p.color === color) { kr = r; kc = c; break; }
+    }
+    return this.isSquareUnderAttack(kr, kc, color === 'white' ? 'black' : 'white');
+  }
+
+  isSquareUnderAttack(tr, tc, attackerColor) {
+    for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+      const p = this.board[r][c];
+      if (p && p.color === attackerColor) {
+        if (p.type === 'P') {
+          const dir = p.color === 'white' ? -1 : 1;
+          if (r + dir === tr && Math.abs(c - tc) === 1) return true;
+        } else if (this.getPseudoLegalMoves(r, c, false).find(m => m.r === tr && m.c === tc)) return true;
+      }
+    }
+    return false;
+  }
+
+  checkGameEndStatus() {
+    let anyMove = false;
+    for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+      const p = this.board[r][c];
+      if (p && p.color === this.currentTurn && this.getLegalMoves(r, c).length > 0) { anyMove = true; break; }
+    }
+    if (!anyMove) return this.isKingInCheck(this.currentTurn) ? (this.currentTurn === 'white' ? 'black' : 'white') : 'draw';
+    return null;
   }
 
   render() {
-    if (this.currentRound >= this.rounds) {
-      this.container.innerHTML = `
-        <div class="game-container">
-          <h2>Word Battle - Game Over!</h2>
-          <div class="game-status">Final Scores</div>
-          <div class="trivia-score">
-            <div>You: <strong>${this.playerScore}</strong></div>
-            <div>Opponent: <strong>${this.opponentScore}</strong></div>
-          </div>
-        </div>
-      `;
-      return;
+    const pieces = {
+      'white': { 'K': '♔', 'Q': '♕', 'R': '♖', 'B': '♗', 'N': '♘', 'P': '♙' },
+      'black': { 'K': '♚', 'Q': '♛', 'R': '♜', 'B': '♝', 'N': '♞', 'P': '♟' }
+    };
+    let boardHtml = '';
+    const isP2 = !this.isPlayer1;
+    for (let r = 0; r < 8; r++) {
+      let actualR = isP2 ? 7 - r : r;
+      let rowHtml = '';
+      for (let c = 0; c < 8; c++) {
+        let actualC = isP2 ? 7 - c : c;
+        const piece = this.board[actualR][actualC];
+        const isTarget = this.selectedSquare && this.getLegalMoves(this.selectedSquare.r, this.selectedSquare.c).find(m => m.r === actualR && m.c === actualC);
+        rowHtml += `<div class="chess-square ${(actualR + actualC) % 2 === 1 ? 'dark' : 'light'} ${this.selectedSquare?.r === actualR && this.selectedSquare?.c === actualC ? 'selected' : ''}" 
+                     onclick="window.currentGame.handleSquareClick(${actualR}, ${actualC})">
+          ${piece ? `<span class="chess-piece ${piece.color}">${pieces[piece.color][piece.type]}</span>` : ''}
+          ${isTarget ? '<div class="move-hint"></div>' : ''}
+        </div>`;
+      }
+      boardHtml += `<div class="chess-row">${rowHtml}</div>`;
     }
-
-    const half = Math.ceil(this.currentWord.length / 2);
-    const partial = this.currentWord.substring(0, half) + '*'.repeat(this.currentWord.length - half);
-
-    this.container.innerHTML = `
-      <div class="game-container">
-        <h2>Word Battle - Round ${this.currentRound + 1}/${this.rounds}</h2>
-        <div class="game-status">You: ${this.playerScore} | Opponent: ${this.opponentScore}</div>
-        <div class="word-prompt">Complete the word: <strong style="font-size: 1.3em">${partial}</strong></div>
-        <input type="text" id="word-input" placeholder="Type the full word"
-               onkeypress="if(event.key==='Enter') window.currentGame.submitAnswer()"
-               ${this.answered ? 'disabled' : ''}>
-        <button class="answer-btn" onclick="window.currentGame.submitAnswer()"
-                ${this.answered ? 'disabled' : ''}>Submit</button>
-      </div>
-    `;
-
-    setTimeout(() => {
-      const input = document.getElementById('word-input');
-      if (input && !this.answered) input.focus();
-    }, 100);
+    const isMyTurn = this.currentTurn === this.playerColor;
+    this.container.innerHTML = `<div class="game-container"><h2>Chess</h2><div class="game-status">${this.gameOver ? 'Game Over' : (isMyTurn ? 'Your Turn' : 'Partner\'s Turn')}${!this.gameOver && this.isKingInCheck(this.currentTurn) ? ' (CHECK!)' : ''}</div><div class="chess-board">${boardHtml}</div></div>`;
   }
 }
+
 
 class RockPaperScissors {
   constructor(container, onMove, onGameEnd, isPlayer1) {

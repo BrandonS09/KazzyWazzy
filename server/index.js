@@ -84,8 +84,8 @@ app.get('/api/ice-servers', async (req, res) => {
 const GAMES = [
   'Tic Tac Toe',
   'Connect Four',
-  'Trivia',
-  'Word Battle',
+  'Checkers',
+  'Chess',
   'Rock Paper Scissors',
   'Number Guessing'
 ];
