@@ -253,6 +253,8 @@ async function initializeVoiceChat() {
       video: false 
     });
     
+    console.log('Local stream acquired:', localStream.getTracks());
+    
     // Initialize WebRTC peer connection
     const configuration = {
       iceServers: [
@@ -265,20 +267,24 @@ async function initializeVoiceChat() {
     
     // Add local stream to peer connection
     localStream.getTracks().forEach(track => {
+      console.log('Adding local track:', track.kind);
       peerConnection.addTrack(track, localStream);
     });
     
     // Handle remote stream
     peerConnection.ontrack = (event) => {
+      console.log('Received remote track:', event.track.kind);
       remoteStream = event.streams[0];
       const remoteAudio = document.getElementById('remote-audio');
       remoteAudio.srcObject = remoteStream;
+      console.log('Remote audio set, playing now');
       updateRemoteAudioIndicator();
     };
     
     // Handle ICE candidates
     peerConnection.onicecandidate = (event) => {
       if (event.candidate) {
+        console.log('Sending ICE candidate');
         sendMessage({
           type: 'ICE_CANDIDATE',
           candidate: event.candidate
@@ -286,10 +292,15 @@ async function initializeVoiceChat() {
       }
     };
     
+    peerConnection.onconnectionstatechange = () => {
+      console.log('PeerConnection state:', peerConnection.connectionState);
+    };
+    
     // Create and send offer
     const offer = await peerConnection.createOffer();
     await peerConnection.setLocalDescription(offer);
     
+    console.log('Sending offer');
     sendMessage({
       type: 'OFFER',
       offer: offer
@@ -321,6 +332,7 @@ async function handleOffer(message) {
       });
       
       peerConnection.ontrack = (event) => {
+        console.log('Received remote track:', event.track.kind);
         remoteStream = event.streams[0];
         const remoteAudio = document.getElementById('remote-audio');
         remoteAudio.srcObject = remoteStream;
@@ -334,6 +346,10 @@ async function handleOffer(message) {
             candidate: event.candidate
           });
         }
+      };
+      
+      peerConnection.onconnectionstatechange = () => {
+        console.log('PeerConnection state:', peerConnection.connectionState);
       };
     }
     
@@ -407,6 +423,11 @@ function monitorLocalAudio() {
 
 function updateRemoteAudioIndicator() {
   try {
+    if (!remoteStream) {
+      console.log('No remote stream yet');
+      return;
+    }
+
     const audioContext = new (window.AudioContext || window.webkitAudioContext)();
     const analyser = audioContext.createAnalyser();
     const microphone = audioContext.createMediaStreamSource(remoteStream);
