@@ -11,6 +11,7 @@ let selectedGame = null;
 let gameId = null;
 let microphoneEnabled = false;
 let speakerEnabled = true;
+let currentGame = null;
 
 const SIGNALING_SERVER = `ws://${window.location.host}`;
 
@@ -85,6 +86,9 @@ function handleServerMessage(message) {
       break;
     case 'PARTNER_LEFT':
       handlePartnerLeft(message);
+      break;
+    case 'GAME_MOVE':
+      handleGameMove(message);
       break;
   }
 }
@@ -167,6 +171,7 @@ function handleGameStarted(message) {
     document.getElementById('partner-name').textContent;
   
   switchScreen('game');
+  initializeGame(message.game);
   initializeVoiceChat();
 }
 
@@ -360,6 +365,66 @@ function handlePartnerLeft() {
   switchScreen('lobby');
 }
 
+function initializeGame(game) {
+  const gameArea = document.getElementById('game-area');
+  
+  const onGameMove = (moveData) => {
+    sendMessage({
+      type: 'GAME_MOVE',
+      move: moveData
+    });
+  };
+  
+  const onGameEnd = (result) => {
+    setTimeout(() => {
+      alert(`Game Over! Result: ${result === 'win' ? 'You Won!' : result === 'loss' ? 'You Lost!' : 'Draw!'}`);
+      cleanup();
+      switchScreen('lobby');
+    }, 1000);
+  };
+  
+  switch(game) {
+    case 'Tic Tac Toe':
+      currentGame = new TicTacToe(gameArea, onGameMove, onGameEnd);
+      break;
+    case 'Connect Four':
+      currentGame = new ConnectFour(gameArea, onGameMove, onGameEnd);
+      break;
+    case 'Trivia':
+      currentGame = new Trivia(gameArea, onGameMove, onGameEnd);
+      break;
+    case 'Word Battle':
+      currentGame = new WordBattle(gameArea, onGameMove, onGameEnd);
+      break;
+    case 'Quick Draw':
+      currentGame = new QuickDraw(gameArea, onGameMove, onGameEnd);
+      break;
+    case 'Chess':
+      currentGame = new TicTacToe(gameArea, onGameMove, onGameEnd); // Placeholder
+      break;
+    default:
+      gameArea.innerHTML = '<p>Game not implemented yet</p>';
+  }
+}
+
+function handleGameMove(message) {
+  if (!currentGame) return;
+  
+  const move = message.move;
+  
+  if (selectedGame === 'Tic Tac Toe') {
+    currentGame.receivedMove(move.index);
+  } else if (selectedGame === 'Connect Four') {
+    currentGame.receivedMove(move.col);
+  } else if (selectedGame === 'Trivia') {
+    currentGame.receivedAnswer(move);
+  } else if (selectedGame === 'Word Battle') {
+    currentGame.receivedWord(move);
+  } else if (selectedGame === 'Quick Draw') {
+    currentGame.receivedDrawing(move);
+  }
+}
+
 // Event listeners
 document.getElementById('join-btn').addEventListener('click', () => {
   const username = document.getElementById('username-input').value || 'Anonymous';
@@ -373,6 +438,11 @@ document.getElementById('username-input').addEventListener('keypress', (e) => {
   if (e.key === 'Enter') {
     document.getElementById('join-btn').click();
   }
+});
+
+document.getElementById('queue-btn').addEventListener('click', () => {
+  sendMessage({ type: 'QUEUE_FOR_MATCH' });
+  switchScreen('queue');
 });
 
 document.getElementById('cancel-queue-btn').addEventListener('click', () => {

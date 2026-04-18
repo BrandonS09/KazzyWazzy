@@ -77,6 +77,9 @@ function handleMessage(userId, ws, message) {
     case 'ANSWER':
       handleAnswer(userId, message);
       break;
+    case 'GAME_MOVE':
+      handleGameMove(userId, message);
+      break;
     case 'LEAVE_PAIR':
       handleLeavePair(userId);
       break;
@@ -331,6 +334,24 @@ function handleLeavePair(userId) {
   pairs.delete(user.pairId);
   user.pairId = null;
   user.status = 'lobby';
+}
+
+function handleGameMove(userId, message) {
+  const user = users.get(userId);
+  if (!user || !user.pairId) return;
+
+  const pair = pairs.get(user.pairId);
+  if (!pair) return;
+
+  const partnerId = pair.user1Id === userId ? pair.user2Id : pair.user1Id;
+  const partner = users.get(partnerId);
+
+  if (partner) {
+    partner.ws.send(JSON.stringify({
+      type: 'GAME_MOVE',
+      move: message.move
+    }));
+  }
 }
 
 function handleUserDisconnect(userId) {
