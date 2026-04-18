@@ -270,10 +270,21 @@ async function initializeVoiceChat() {
         { urls: 'stun:stun1.l.google.com:19302' },
         { urls: 'stun:stun2.l.google.com:19302' },
         { urls: 'stun:global.stun.twilio.com:3478' }
-      ]
+      ],
+      iceCandidatePoolSize: 10
     };
     
+    console.log('Creating RTCPeerConnection with config:', configuration);
+    
     peerConnection = new RTCPeerConnection(configuration);
+    
+    peerConnection.oniceconnectionstatechange = () => {
+      console.log('ICE Connection State:', peerConnection.iceConnectionState);
+    };
+    
+    peerConnection.onicegatheringstatechange = () => {
+      console.log('ICE Gathering State:', peerConnection.iceGatheringState);
+    };
     
     // Add local stream to peer connection
     localStream.getTracks().forEach(track => {
@@ -317,7 +328,26 @@ async function initializeVoiceChat() {
     const offer = await peerConnection.createOffer();
     await peerConnection.setLocalDescription(offer);
     
-    console.log('Sending offer');
+    // Wait for ICE gathering to complete or timeout
+    await new Promise((resolve) => {
+      if (peerConnection.iceGatheringState === 'complete') {
+        resolve();
+        return;
+      }
+      
+      const timeout = setTimeout(resolve, 1000); // Wait max 1 second
+      
+      const check = (event) => {
+        if (event.candidate === null) {
+          clearTimeout(timeout);
+          peerConnection.onicecandidate = null;
+          resolve();
+        }
+      };
+      peerConnection.onicecandidate = check;
+    });
+    
+    console.log('Sending offer with ICE candidates');
     sendMessage({
       type: 'OFFER',
       offer: offer
@@ -391,6 +421,26 @@ async function handleOffer(message) {
     const answer = await peerConnection.createAnswer();
     await peerConnection.setLocalDescription(answer);
     
+    // Wait for ICE gathering to complete
+    await new Promise((resolve) => {
+      if (peerConnection.iceGatheringState === 'complete') {
+        resolve();
+        return;
+      }
+      
+      const timeout = setTimeout(resolve, 1000);
+      
+      const handler = (event) => {
+        if (event.candidate === null) {
+          clearTimeout(timeout);
+          peerConnection.removeEventListener('icecandidate', handler);
+          resolve();
+        }
+      };
+      peerConnection.addEventListener('icecandidate', handler);
+    });
+    
+    console.log('Sending answer with ICE candidates');
     sendMessage({
       type: 'ANSWER',
       answer: answer
@@ -402,9 +452,11 @@ async function handleOffer(message) {
 
 async function handleAnswer(message) {
   try {
+    console.log('Received answer, setting remote description');
     await peerConnection.setRemoteDescription(
       new RTCSessionDescription(message.answer)
     );
+    console.log('Remote description set from answer - connection should now be established');
   } catch (error) {
     console.error('Error handling answer:', error);
   }
@@ -412,9 +464,11 @@ async function handleAnswer(message) {
 
 async function handleICECandidate(message) {
   try {
+    console.log('Received ICE candidate:', message.candidate);
     await peerConnection.addIceCandidate(
       new RTCIceCandidate(message.candidate)
     );
+    console.log('Added ICE candidate successfully');
   } catch (error) {
     console.error('Error handling ICE candidate:', error);
   }
