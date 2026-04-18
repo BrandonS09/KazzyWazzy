@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Team Game Pairing</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Lobby Screen -->
+    <div id="lobby-screen" class="screen active">
+      <div class="container">
+        <h1>Team Game Pairing</h1>
+        <div class="lobby-content">
+          <div class="username-input">
+            <input type="text" id="username-input" placeholder="Enter your username">
+            <button id="join-btn">Join Lobby</button>
+          </div>
+          <div class="online-info">
+            <p>Users Online: <span id="user-count">0</span></p>
+            <p>Queue Size: <span id="queue-count">0</span></p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Queue Screen -->
+    <div id="queue-screen" class="screen">
+      <div class="container">
+        <h1>Finding a Partner...</h1>
+        <div class="queue-content">
+          <div class="spinner"></div>
+          <p>Queue Position: <span id="queue-position">-</span></p>
+          <button id="cancel-queue-btn">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Game Selection Screen -->
+    <div id="game-selection-screen" class="screen">
+      <div class="container">
+        <h1>Select a Game</h1>
+        <div class="game-selection-content">
+          <p>Playing with: <strong id="partner-name">-</strong></p>
+          <div id="game-list" class="game-list"></div>
+          <button id="start-game-btn" disabled>Start Game</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Game Screen -->
+    <div id="game-screen" class="screen">
+      <div class="container game-container">
+        <div class="game-info">
+          <h2 id="current-game">Game</h2>
+          <p>Partner: <span id="game-partner-name">-</span></p>
+        </div>
+        
+        <div class="voice-chat-section">
+          <div class="voice-controls">
+            <button id="toggle-microphone" class="voice-btn">🎤 Enable Microphone</button>
+            <button id="toggle-speaker" class="voice-btn speaker-on">🔊 Speaker On</button>
+          </div>
+          <div class="audio-indicators">
+            <div class="audio-indicator">
+              <p>You</p>
+              <div id="local-audio-indicator" class="indicator"></div>
+            </div>
+            <div class="audio-indicator">
+              <p>Partner</p>
+              <div id="remote-audio-indicator" class="indicator"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="game-area" id="game-area">
+          <p>Game will be displayed here</p>
+        </div>
+
+        <button id="leave-game-btn">Leave Game</button>
+      </div>
+    </div>
+  </div>
+
+  <audio id="remote-audio" autoplay></audio>
+  <script src="./main.js" type="module"></script>
+</body>
+</html>
