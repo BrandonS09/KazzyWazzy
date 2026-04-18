@@ -268,15 +268,23 @@ async function initializeVoiceChat() {
 // Initialize WebRTC peer connection
     const configuration = {
       iceServers: [
+        // STUN servers - for NAT traversal
         { urls: 'stun:stun.l.google.com:19302' },
         { urls: 'stun:stun1.l.google.com:19302' },
         { urls: 'stun:stun2.l.google.com:19302' },
-        { urls: 'stun:global.stun.twilio.com:3478' }
+        { urls: 'stun:global.stun.twilio.com:3478' },
+        { urls: 'stun:openrelay.metered.ca:443' },
+        // TURN server - for when STUN fails (free, no auth needed)
+        { 
+          urls: 'turn:openrelay.metered.ca:443',
+          username: 'openrelayproject',
+          credential: 'openrelayproject'
+        }
       ],
       iceCandidatePoolSize: 10
     };
     
-    console.log('Creating RTCPeerConnection with config:', configuration);
+    console.log('Creating RTCPeerConnection with TURN server:', configuration.iceServers.map(s => s.urls).join(', '));
     
     peerConnection = new RTCPeerConnection(configuration);
     
@@ -302,7 +310,7 @@ async function initializeVoiceChat() {
       }
     };
     
-    console.log('Creating RTCPeerConnection with config:', configuration);
+    console.log('RTCPeerConnection ready with TURN server');
     
     peerConnection = new RTCPeerConnection(configuration);
     
@@ -377,12 +385,22 @@ async function handleOffer(message) {
     if (!peerConnection) {
       const configuration = {
         iceServers: [
+          // STUN servers - for NAT traversal
           { urls: 'stun:stun.l.google.com:19302' },
           { urls: 'stun:stun1.l.google.com:19302' },
           { urls: 'stun:stun2.l.google.com:19302' },
-          { urls: 'stun:global.stun.twilio.com:3478' }
+          { urls: 'stun:global.stun.twilio.com:3478' },
+          { urls: 'stun:openrelay.metered.ca:443' },
+          // TURN server - for when STUN fails (free, no auth needed)
+          { 
+            urls: 'turn:openrelay.metered.ca:443',
+            username: 'openrelayproject',
+            credential: 'openrelayproject'
+          }
         ]
       };
+      
+      console.log('Answerer: Creating RTCPeerConnection with TURN server');
       
       peerConnection = new RTCPeerConnection(configuration);
       
