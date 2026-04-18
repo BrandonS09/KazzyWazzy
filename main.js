@@ -16,7 +16,9 @@ let isPlayer1 = true;
 
 const SIGNALING_SERVER = window.location.hostname === 'localhost' 
   ? `ws://${window.location.host}` 
-  : (window.location.protocol === 'https:' ? `wss://kazzywazzy.onrender.com` : `ws://kazzywazzy.onrender.com`);
+  : (window.location.protocol === 'https:' 
+      ? `wss://kazzywazzy.onrender.com` 
+      : `ws://kazzywazzy.onrender.com:10000`);
 
 console.log('Environment:', {
   hostname: window.location.hostname,
@@ -263,7 +265,7 @@ async function initializeVoiceChat() {
     
     console.log('Local stream acquired:', localStream.getTracks());
     
-    // Initialize WebRTC peer connection
+// Initialize WebRTC peer connection
     const configuration = {
       iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
@@ -272,6 +274,32 @@ async function initializeVoiceChat() {
         { urls: 'stun:global.stun.twilio.com:3478' }
       ],
       iceCandidatePoolSize: 10
+    };
+    
+    console.log('Creating RTCPeerConnection with config:', configuration);
+    
+    peerConnection = new RTCPeerConnection(configuration);
+    
+    // Set up handlers BEFORE creating offer
+    peerConnection.oniceconnectionstatechange = () => {
+      console.log('ICE Connection State:', peerConnection.iceConnectionState);
+    };
+    
+    peerConnection.onicegatheringstatechange = () => {
+      console.log('ICE Gathering State:', peerConnection.iceGatheringState);
+    };
+    
+    // Handle ICE candidates - store them if remote not set yet
+    let pendingIceCandidates = [];
+    
+    peerConnection.onicecandidate = (event) => {
+      if (event.candidate) {
+        console.log('Sending ICE candidate:', event.candidate);
+        sendMessage({
+          type: 'ICE_CANDIDATE',
+          candidate: event.candidate
+        });
+      }
     };
     
     console.log('Creating RTCPeerConnection with config:', configuration);
@@ -328,26 +356,8 @@ async function initializeVoiceChat() {
     const offer = await peerConnection.createOffer();
     await peerConnection.setLocalDescription(offer);
     
-    // Wait for ICE gathering to complete or timeout
-    await new Promise((resolve) => {
-      if (peerConnection.iceGatheringState === 'complete') {
-        resolve();
-        return;
-      }
-      
-      const timeout = setTimeout(resolve, 1000); // Wait max 1 second
-      
-      const check = (event) => {
-        if (event.candidate === null) {
-          clearTimeout(timeout);
-          peerConnection.onicecandidate = null;
-          resolve();
-        }
-      };
-      peerConnection.onicecandidate = check;
-    });
-    
-    console.log('Sending offer with ICE candidates');
+    // Send offer immediately - ICE candidates will come via onicecandidate handler
+    console.log('Sending offer (ICE candidates will follow separately)');
     sendMessage({
       type: 'OFFER',
       offer: offer
@@ -398,6 +408,7 @@ async function handleOffer(message) {
       
       peerConnection.onicecandidate = (event) => {
         if (event.candidate) {
+          console.log('Answerer: Sending ICE candidate');
           sendMessage({
             type: 'ICE_CANDIDATE',
             candidate: event.candidate
@@ -406,10 +417,10 @@ async function handleOffer(message) {
       };
       
       peerConnection.onconnectionstatechange = () => {
-        console.log('PeerConnection state:', peerConnection.connectionState);
+        console.log('Answerer PeerConnection state:', peerConnection.connectionState);
         
         if (peerConnection.connectionState === 'failed' || peerConnection.connectionState === 'disconnected') {
-          console.error('Peer connection failed or disconnected');
+          console.error('Answerer: Peer connection failed or disconnected');
         }
       };
     }
@@ -421,26 +432,8 @@ async function handleOffer(message) {
     const answer = await peerConnection.createAnswer();
     await peerConnection.setLocalDescription(answer);
     
-    // Wait for ICE gathering to complete
-    await new Promise((resolve) => {
-      if (peerConnection.iceGatheringState === 'complete') {
-        resolve();
-        return;
-      }
-      
-      const timeout = setTimeout(resolve, 1000);
-      
-      const handler = (event) => {
-        if (event.candidate === null) {
-          clearTimeout(timeout);
-          peerConnection.removeEventListener('icecandidate', handler);
-          resolve();
-        }
-      };
-      peerConnection.addEventListener('icecandidate', handler);
-    });
-    
-    console.log('Sending answer with ICE candidates');
+    // Send answer immediately
+    console.log('Sending answer');
     sendMessage({
       type: 'ANSWER',
       answer: answer
@@ -464,13 +457,13 @@ async function handleAnswer(message) {
 
 async function handleICECandidate(message) {
   try {
-    console.log('Received ICE candidate:', message.candidate);
+    console.log('Received ICE candidate, adding to peer connection');
     await peerConnection.addIceCandidate(
       new RTCIceCandidate(message.candidate)
     );
-    console.log('Added ICE candidate successfully');
+    console.log('ICE candidate added - waiting for connection');
   } catch (error) {
-    console.error('Error handling ICE candidate:', error);
+    console.error('Error adding ICE candidate:', error);
   }
 }
 
