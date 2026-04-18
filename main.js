@@ -17,7 +17,7 @@ let isPlayer1 = true;
 const SIGNALING_SERVER = window.location.hostname === 'localhost' 
   ? `ws://${window.location.host}` 
   : (window.location.protocol === 'https:' 
-      ? `wss://kazzywazzy.onrender.com` 
+      ? `wss://kazzywazzy.onrender.com:10000` 
       : `ws://kazzywazzy.onrender.com:10000`);
 
 console.log('Environment:', {
