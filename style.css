@@ -567,6 +567,133 @@ p {
   cursor: not-allowed;
 }
 
+/* YouTube Watch Styles */
+.youtube-watch-container {
+  width: 100%;
+  max-width: 900px;
+}
+
+.youtube-selection {
+  display: flex;
+  flex-direction: column;
+  gap: 30px;
+}
+
+.preset-videos {
+  width: 100%;
+}
+
+.preset-videos h3 {
+  font-size: 1.2em;
+  margin-bottom: 15px;
+  color: #333;
+}
+
+.preset-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+}
+
+.preset-btn {
+  padding: 15px;
+  border: 2px solid #ddd;
+  border-radius: 8px;
+  background: white;
+  cursor: pointer;
+  font-size: 0.95em;
+  font-weight: 600;
+  transition: all 0.3s;
+  min-height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.preset-btn:hover {
+  border-color: #667eea;
+  background: #f0f4ff;
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.2);
+}
+
+.preset-title {
+  font-size: 0.9em;
+  line-height: 1.4;
+}
+
+.custom-url-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.custom-url-section h3 {
+  font-size: 1.2em;
+  color: #333;
+}
+
+.youtube-player {
+  width: 100%;
+  margin: 20px 0;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.youtube-player iframe {
+  width: 100%;
+  height: 400px;
+  border: none;
+}
+
+.watch-info {
+  text-align: center;
+  padding: 20px;
+  background: #f9f9f9;
+  border-radius: 8px;
+  margin-top: 20px;
+}
+
+.watch-info p {
+  font-size: 1.1em;
+  color: #333;
+  margin-bottom: 15px;
+}
+
+.change-video-btn {
+  background: #667eea;
+  color: white;
+  padding: 10px 20px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.95em;
+  transition: all 0.3s;
+}
+
+.change-video-btn:hover {
+  background: #5568d3;
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+}
+
+.start-btn {
+  background: #667eea;
+  color: white;
+  padding: 12px 24px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 1em;
+  font-weight: 600;
+  transition: all 0.3s;
+}
+
+.start-btn:hover {
+  background: #5568d3;
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+}
+
 /* Buttons */
 button {
   padding: 12px 30px;
@@ -604,6 +731,76 @@ button:active:not(:disabled) {
 #cancel-queue-btn:hover:not(:disabled),
 #leave-game-btn:hover:not(:disabled) {
   background: #d32f2f;
+}
+
+/* Text Chat Styles */
+.text-chat-section {
+  margin: 20px 0;
+  background: #f9f9f9;
+  border: 2px solid #e0e0e0;
+  border-radius: 10px;
+  padding: 15px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.chat-messages {
+  height: 150px;
+  overflow-y: auto;
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  text-align: left;
+}
+
+.chat-message {
+  padding: 8px 12px;
+  border-radius: 15px;
+  max-width: 80%;
+  word-wrap: break-word;
+  font-size: 0.95em;
+}
+
+.chat-message.self {
+  align-self: flex-end;
+  background: #667eea;
+  color: white;
+}
+
+.chat-message.partner {
+  align-self: flex-start;
+  background: #e0e0e0;
+  color: #333;
+}
+
+.chat-form {
+  display: flex;
+  gap: 10px;
+}
+
+.chat-form input {
+  flex: 1;
+  padding: 10px 15px;
+  border: 2px solid #ddd;
+  border-radius: 20px;
+  outline: none;
+  font-size: 0.95em;
+  transition: border-color 0.3s;
+}
+
+.chat-form input:focus {
+  border-color: #667eea;
+}
+
+.chat-form button {
+  padding: 8px 20px;
+  border-radius: 20px;
+  margin: 0;
 }
 
 /* Responsive */
@@ -647,6 +844,14 @@ button:active:not(:disabled) {
 
   .guess-grid {
     grid-template-columns: repeat(4, 1fr);
+  }
+
+  .youtube-player iframe {
+    height: 250px;
+  }
+
+  .preset-grid {
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
   }
 
   #game-area {

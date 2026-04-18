@@ -87,7 +87,7 @@ const GAMES = [
   'Trivia',
   'Word Battle',
   'Rock Paper Scissors',
-  'Number Guessing'
+  'Group Watch'
 ];
 
 // User management
@@ -151,6 +151,9 @@ function handleMessage(userId, ws, message) {
       break;
     case 'PLAY_AGAIN_REQUEST':
       handlePlayAgainRequest(userId, message);
+      break;
+    case 'CHAT_MESSAGE':
+      handleChatMessage(userId, message);
       break;
   }
 }
@@ -422,6 +425,25 @@ function handleGameMove(userId, message) {
     partner.ws.send(JSON.stringify({
       type: 'GAME_MOVE',
       move: message.move
+    }));
+  }
+}
+
+function handleChatMessage(userId, message) {
+  const user = users.get(userId);
+  if (!user || !user.pairId) return;
+
+  const pair = pairs.get(user.pairId);
+  if (!pair) return;
+
+  const partnerId = pair.user1Id === userId ? pair.user2Id : pair.user1Id;
+  const partner = users.get(partnerId);
+
+  if (partner) {
+    partner.ws.send(JSON.stringify({
+      type: 'CHAT_MESSAGE',
+      text: message.text,
+      from: user.username
     }));
   }
 }

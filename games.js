@@ -640,115 +640,262 @@ class RockPaperScissors {
   }
 }
 
-class SimpleGuessing {
+class GroupWatch {
   constructor(container, onMove, onGameEnd, isPlayer1) {
     this.container = container;
     this.onMove = onMove;
     this.onGameEnd = onGameEnd;
     this.isPlayer1 = isPlayer1;
-    this.rounds = 3;
-    this.currentRound = 0;
-    this.playerScore = 0;
-    this.opponentScore = 0;
-    this.gameOver = false;
-    this.playerGuess = null;
-    this.targetNumber = Math.floor(Math.random() * 10) + 1;
+
+    this.videoId = null;
+    this.player = null;
+
+    this.isPlaying = false;
+    this.currentTime = 0;
+    this.lastSyncTime = 0;
+
+    this.showPresets = true;
+    this.isSyncing = false; // prevent feedback loops
+
+    this.presetVideos = [
+      { title: 'Lo-Fi Hip Hop Beats', id: 'jfKfPfyJFDc' },
+      { title: 'Chill Jazz Vibes', id: 'rUxyKA_-grg' },
+      { title: 'Nature Documentary Trailer', id: 'n8X9_MgEdCo' },
+      { title: 'Motivational Speech', id: 'ZXsQAXx_ao0' },
+      { title: 'Funny Cat Videos Compilation', id: 'J---aiyznGQ' }
+    ];
+
+    this.loadYouTubeAPI();
     this.render();
   }
 
-  makeGuess(num) {
-    if (this.gameOver || this.playerGuess !== null) return;
+  /* ---------------- API LOADING ---------------- */
 
-    this.playerGuess = num;
-    const correct = num === this.targetNumber;
+  loadYouTubeAPI() {
+    if (window.YT && window.YT.Player) return;
 
-    if (correct) {
-      this.playerScore++;
-    }
-
-    this.onMove({ type: 'guess', number: num, correct });
-    this.render();
-
-    setTimeout(() => {
-      this.currentRound++;
-      this.playerGuess = null;
-      this.targetNumber = Math.floor(Math.random() * 10) + 1;
-
-      if (this.currentRound >= this.rounds) {
-        this.gameOver = true;
-        if (this.playerScore > this.opponentScore) {
-          this.onGameEnd('win');
-        } else if (this.playerScore < this.opponentScore) {
-          this.onGameEnd('loss');
-        } else {
-          this.onGameEnd('draw');
-        }
-      } else {
-        this.render();
-      }
-    }, 1500);
+    const tag = document.createElement('script');
+    tag.src = "https://www.youtube.com/iframe_api";
+    document.body.appendChild(tag);
   }
 
-  receivedGuess(data) {
-    if (data.correct) {
-      this.opponentScore++;
+  waitForYT(callback) {
+    if (window.YT && YT.Player) return callback();
+    window.onYouTubeIframeAPIReady = callback;
+  }
+
+  /* ---------------- VIDEO HELPERS ---------------- */
+
+  extractVideoId(url) {
+    if (!url) return null;
+
+    if (url.includes('youtube.com/watch')) {
+      const match = url.match(/v=([a-zA-Z0-9_-]{11})/);
+      return match ? match[1] : null;
     }
 
-    this.currentRound++;
+    if (url.includes('youtu.be/')) {
+      const match = url.match(/youtu\.be\/([a-zA-Z0-9_-]{11})/);
+      return match ? match[1] : null;
+    }
 
-    if (this.currentRound >= this.rounds) {
-      this.gameOver = true;
-      if (this.playerScore > this.opponentScore) {
-        this.onGameEnd('win');
-      } else if (this.playerScore < this.opponentScore) {
-        this.onGameEnd('loss');
-      } else {
-        this.onGameEnd('draw');
+    if (/^[a-zA-Z0-9_-]{11}$/.test(url)) return url;
+
+    return null;
+  }
+
+  /* ---------------- PLAYER ---------------- */
+
+  initPlayer() {
+    this.player = new YT.Player('youtube-player', {
+      height: '400',
+      width: '100%',
+      videoId: this.videoId,
+      playerVars: {
+        autoplay: 0,
+        controls: 1
+      },
+      events: {
+        onReady: () => this.onPlayerReady(),
+        onStateChange: (e) => this.onPlayerStateChange(e)
       }
+    });
+
+    // periodic sync check
+    this.startSyncLoop();
+  }
+
+  onPlayerReady() {
+    console.log('Player ready');
+  }
+
+  onPlayerStateChange(event) {
+    if (this.isSyncing) return;
+
+    const state = event.data;
+
+    if (state === YT.PlayerState.PLAYING) {
+      this.isPlaying = true;
+      this.currentTime = this.player.getCurrentTime();
+
+      this.sendMove({
+        type: 'playback',
+        isPlaying: true,
+        currentTime: this.currentTime
+      });
+    }
+
+    if (state === YT.PlayerState.PAUSED) {
+      this.isPlaying = false;
+      this.currentTime = this.player.getCurrentTime();
+
+      this.sendMove({
+        type: 'playback',
+        isPlaying: false,
+        currentTime: this.currentTime
+      });
+    }
+  }
+
+  /* ---------------- SYNC ---------------- */
+
+  startSyncLoop() {
+    clearInterval(this.syncInterval);
+
+    this.syncInterval = setInterval(() => {
+      if (!this.player || !this.isPlaying) return;
+
+      const time = this.player.getCurrentTime();
+
+      this.sendMove({
+        type: 'sync',
+        currentTime: time
+      });
+    }, 3000);
+  }
+
+  applySync(data) {
+    if (!this.player) return;
+
+    const local = this.player.getCurrentTime();
+    const diff = Math.abs(local - data.currentTime);
+
+    // correct drift if too large
+    if (diff > 1.5) {
+      this.isSyncing = true;
+      this.player.seekTo(data.currentTime, true);
+      setTimeout(() => (this.isSyncing = false), 300);
+    }
+  }
+
+  /* ---------------- NETWORK SEND ---------------- */
+
+  sendMove(payload) {
+    this.lastSyncTime = Date.now();
+    this.onMove(payload);
+  }
+
+  /* ---------------- RECEIVERS ---------------- */
+
+  receivedVideoSelection(data) {
+    this.videoId = data.videoId;
+    this.showPresets = false;
+    this.render();
+  }
+
+  receivedPlayback(data) {
+    if (!this.player) return;
+
+    this.isSyncing = true;
+
+    if (data.isPlaying) {
+      this.player.seekTo(data.currentTime, true);
+      this.player.playVideo();
     } else {
-      this.targetNumber = Math.floor(Math.random() * 10) + 1;
-      this.render();
+      this.player.pauseVideo();
     }
+
+    setTimeout(() => (this.isSyncing = false), 300);
   }
+
+  receivedSync(data) {
+    this.applySync(data);
+  }
+
+  /* ---------------- UI ACTIONS ---------------- */
+
+  selectPreset(videoId) {
+    this.videoId = videoId;
+    this.showPresets = false;
+
+    this.sendMove({ type: 'video-selected', videoId });
+    this.render();
+  }
+
+  submitCustomUrl() {
+    const input = document.getElementById('youtube-url-input');
+    if (!input) return;
+
+    const url = input.value.trim();
+    const videoId = this.extractVideoId(url);
+
+    if (!videoId) {
+      alert('Invalid YouTube URL or video ID');
+      return;
+    }
+
+    this.videoId = videoId;
+    this.showPresets = false;
+
+    this.sendMove({ type: 'video-selected', videoId });
+    this.render();
+  }
+
+  changeVideo() {
+    this.videoId = null;
+    this.showPresets = true;
+
+    if (this.player) {
+      this.player.destroy();
+      this.player = null;
+    }
+
+    this.render();
+  }
+
+  /* ---------------- RENDER ---------------- */
 
   render() {
-    if (this.currentRound >= this.rounds) {
+    if (this.showPresets && !this.videoId) {
       this.container.innerHTML = `
-        <div class="game-container">
-          <h2>Number Guessing - Game Over!</h2>
-          <div class="game-status">Final Scores</div>
-          <div class="trivia-score">
-            <div>You: <strong>${this.playerScore}</strong></div>
-            <div>Opponent: <strong>${this.opponentScore}</strong></div>
+        <div class="youtube-watch-container">
+          <h2>🎬 Watch Together on YouTube</h2>
+
+          <div class="preset-grid">
+            ${this.presetVideos.map(v => `
+              <button onclick="window.currentGame.selectPreset('${v.id}')">
+                ${v.title}
+              </button>
+            `).join('')}
           </div>
+
+          <input id="youtube-url-input" placeholder="Paste YouTube URL"/>
+          <button onclick="window.currentGame.submitCustomUrl()">Load</button>
         </div>
       `;
       return;
     }
 
-    const buttons = [];
-    for (let i = 1; i <= 10; i++) {
-      buttons.push(`
-        <button class="guess-btn" onclick="window.currentGame.makeGuess(${i})"
-                ${this.playerGuess !== null ? 'disabled' : ''}>
-          ${i}
-        </button>
-      `);
-    }
-
-    const feedback = this.playerGuess !== null
-      ? (this.playerGuess === this.targetNumber ? '✓ Correct!' : '✗ Wrong! The answer was: ' + this.targetNumber)
-      : 'Guess a number 1-10';
-
-    this.container.innerHTML = `
-      <div class="game-container">
-        <h2>Number Guessing - Round ${this.currentRound + 1}/${this.rounds}</h2>
-        <div class="game-status">You: ${this.playerScore} | Opponent: ${this.opponentScore}</div>
-        <div style="margin: 20px 0; font-size: 1.1em; color: #333;">${feedback}</div>
-        <div class="guess-grid">
-          ${buttons.join('')}
+    if (this.videoId) {
+      this.container.innerHTML = `
+        <div class="youtube-watch-container">
+          <h2>🎬 Watching Together</h2>
+          <div id="youtube-player"></div>
+          <button onclick="window.currentGame.changeVideo()">Change Video</button>
         </div>
-      </div>
-    `;
+      `;
+
+      this.waitForYT(() => this.initPlayer());
+    }
   }
 }

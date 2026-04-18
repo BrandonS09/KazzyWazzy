@@ -111,12 +111,31 @@ function handleServerMessage(message) {
     case 'PARTNER_PLAY_AGAIN_REQUEST':
       handlePartnerPlayAgainRequest(message);
       break;
+    case 'CHAT_MESSAGE':
+      handleIncomingChatMessage(message);
+      break;
   }
 }
 
 function handleJoinedLobby(message) {
   userId = message.userId;
   switchScreen('lobby');
+}
+
+function handleIncomingChatMessage(message) {
+  appendChatMessage(message.from, message.text, 'partner');
+}
+
+function appendChatMessage(sender, text, type) {
+  const messagesContainer = document.getElementById('chat-messages');
+  if (!messagesContainer) return;
+  
+  const msgEl = document.createElement('div');
+  msgEl.className = `chat-message ${type}`;
+  msgEl.innerHTML = `<strong>${sender}:</strong> ${text}`;
+  
+  messagesContainer.appendChild(msgEl);
+  messagesContainer.scrollTop = messagesContainer.scrollHeight;
 }
 
 function handlePartnerPlayAgainRequest(message) {
@@ -266,8 +285,8 @@ function initializeGame(game) {
      case 'Rock Paper Scissors':
        currentGame = new RockPaperScissors(gameArea, onGameMove, onGameEnd, isPlayer1);
        break;
-     case 'Number Guessing':
-       currentGame = new SimpleGuessing(gameArea, onGameMove, onGameEnd, isPlayer1);
+     case 'Group Watch':
+       currentGame = new GroupWatch(gameArea, onGameMove, onGameEnd, isPlayer1);
        break;
      default:
        gameArea.innerHTML = '<p>Game not implemented yet</p>';
@@ -294,9 +313,13 @@ function handleGameMove(message) {
      if (currentGame.receivedMove) {
        currentGame.receivedMove(move);
      }
-   } else if (selectedGame === 'Number Guessing') {
-     if (currentGame.receivedGuess) {
-       currentGame.receivedGuess(move);
+   } else if (selectedGame === 'Group Watch') {
+     if (move.type === 'video-selected' && currentGame.receivedVideoSelection) {
+       currentGame.receivedVideoSelection(move);
+     } else if (move.type === 'playback' && currentGame.receivedPlayback) {
+       currentGame.receivedPlayback(move);
+     } else if (move.type === 'sync' && currentGame.receivedSync) {
+       currentGame.receivedSync(move);
      }
    }
  }
@@ -805,6 +828,17 @@ document.getElementById('overlay-leave-btn').addEventListener('click', () => {
   document.getElementById('leave-game-btn').click();
 });
 
+document.getElementById('chat-form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const input = document.getElementById('chat-input');
+  const text = input.value.trim();
+  if (text) {
+    appendChatMessage('You', text, 'self');
+    sendMessage({ type: 'CHAT_MESSAGE', text });
+    input.value = '';
+  }
+});
+
 function cleanup() {
   cleanupVoiceChat();
   
@@ -816,6 +850,11 @@ function cleanup() {
   window.currentGame = null;
   microphoneEnabled = false;
   speakerEnabled = true;
+
+  const messagesContainer = document.getElementById('chat-messages');
+  if (messagesContainer) {
+    messagesContainer.innerHTML = '';
+  }
 }
 
 // Initialize
