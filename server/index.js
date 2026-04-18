@@ -23,8 +23,13 @@ app.use((req, res, next) => {
 });
 
 // ICE server configuration endpoint
-// Returns STUN + TURN servers. TURN credentials come from environment variables.
-app.get('/api/ice-servers', (req, res) => {
+// Returns STUN + TURN servers for WebRTC.
+// Supports two TURN configuration methods:
+//   Option A (recommended): Set METERED_API_KEY + METERED_APP_NAME env vars
+//                           → fetches temporary credentials from Metered.ca (free 20GB/month)
+//   Option B: Set TURN_URLS + TURN_USERNAME + TURN_CREDENTIAL env vars
+//             → uses any generic TURN provider
+app.get('/api/ice-servers', async (req, res) => {
   const iceServers = [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
@@ -32,22 +37,44 @@ app.get('/api/ice-servers', (req, res) => {
     { urls: 'stun:global.stun.twilio.com:3478' },
   ];
 
-  // Add TURN server if credentials are configured via env vars
-  const turnUrls = process.env.TURN_URLS;
-  const turnUsername = process.env.TURN_USERNAME;
-  const turnCredential = process.env.TURN_CREDENTIAL;
+  let hasTurn = false;
 
-  if (turnUrls && turnUsername && turnCredential) {
-    // Support comma-separated TURN URLs
-    const urls = turnUrls.split(',').map(u => u.trim());
+  // Option A: Metered.ca free TURN — fetches temporary credentials via REST API
+  if (process.env.METERED_API_KEY) {
+    try {
+      const appName = process.env.METERED_APP_NAME || 'kazzywazzy';
+      const apiKey = process.env.METERED_API_KEY;
+      const resp = await fetch(
+        `https://${appName}.metered.live/api/v1/turn/credentials?apiKey=${apiKey}`
+      );
+      if (resp.ok) {
+        const turnServers = await resp.json();
+        iceServers.push(...turnServers);
+        hasTurn = true;
+        console.log(`TURN credentials fetched from Metered (${turnServers.length} servers)`);
+      } else {
+        console.error('Metered API error:', resp.status, await resp.text());
+      }
+    } catch (err) {
+      console.error('Failed to fetch Metered TURN credentials:', err.message);
+    }
+  }
+
+  // Option B: Generic TURN server from env vars
+  if (!hasTurn && process.env.TURN_URLS) {
+    const urls = process.env.TURN_URLS.split(',').map(u => u.trim());
     iceServers.push({
       urls,
-      username: turnUsername,
-      credential: turnCredential
+      username: process.env.TURN_USERNAME || '',
+      credential: process.env.TURN_CREDENTIAL || ''
     });
-    console.log('TURN server configured:', urls);
-  } else {
-    console.log('No TURN server configured - cross-network voice chat may not work');
+    hasTurn = true;
+    console.log('Generic TURN server configured:', urls);
+  }
+
+  if (!hasTurn) {
+    console.log('⚠️  No TURN server configured — cross-network voice chat may fail.');
+    console.log('   Set METERED_API_KEY (free at metered.ca) or TURN_URLS env vars.');
   }
 
   res.json({ iceServers });
