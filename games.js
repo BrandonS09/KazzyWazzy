@@ -1025,10 +1025,10 @@ class GroupWatch {
 
     this.isPlaying = false;
     this.currentTime = 0;
-    this.lastSyncTime = 0;
 
     this.showPresets = true;
-    this.isSyncing = false; // prevent feedback loops
+    this.isSyncing = false;
+    this.syncTimeout = null;
 
     this.presetVideos = [
       { title: 'Lo-Fi Hip Hop Beats', id: 'jfKfPfyJFDc' },
@@ -1054,7 +1054,11 @@ class GroupWatch {
 
   waitForYT(callback) {
     if (window.YT && YT.Player) return callback();
-    window.onYouTubeIframeAPIReady = callback;
+    const oldCallback = window.onYouTubeIframeAPIReady;
+    window.onYouTubeIframeAPIReady = () => {
+      if (oldCallback) oldCallback();
+      callback();
+    };
   }
 
   /* ---------------- VIDEO HELPERS ---------------- */
@@ -1086,7 +1090,9 @@ class GroupWatch {
       videoId: this.videoId,
       playerVars: {
         autoplay: 0,
-        controls: 1
+        controls: 1,
+        rel: 0,
+        enablejsapi: 1
       },
       events: {
         onReady: () => this.onPlayerReady(),
@@ -1094,7 +1100,6 @@ class GroupWatch {
       }
     });
 
-    // periodic sync check
     this.startSyncLoop();
   }
 
@@ -1102,10 +1107,26 @@ class GroupWatch {
     console.log('Player ready');
   }
 
-  onPlayerStateChange(event) {
-    if (this.isSyncing) return;
+  setSyncing() {
+    this.isSyncing = true;
+    clearTimeout(this.syncTimeout);
+    this.syncTimeout = setTimeout(() => {
+      this.isSyncing = false;
+    }, 2000);
+  }
 
+  onPlayerStateChange(event) {
     const state = event.data;
+
+    if (this.isSyncing) {
+      if (state === YT.PlayerState.PLAYING || state === YT.PlayerState.PAUSED) {
+        clearTimeout(this.syncTimeout);
+        this.syncTimeout = setTimeout(() => {
+          this.isSyncing = false;
+        }, 500);
+      }
+      return;
+    }
 
     if (state === YT.PlayerState.PLAYING) {
       this.isPlaying = true;
@@ -1136,35 +1157,53 @@ class GroupWatch {
     clearInterval(this.syncInterval);
 
     this.syncInterval = setInterval(() => {
-      if (!this.player || !this.isPlaying) return;
+      if (!this.player || !this.player.getCurrentTime) return;
+      if (this.isSyncing) return;
 
-      const time = this.player.getCurrentTime();
+      try {
+        const time = this.player.getCurrentTime();
+        const playerState = this.player.getPlayerState();
 
-      this.sendMove({
-        type: 'sync',
-        currentTime: time
-      });
-    }, 3000);
+        if (this.isPlaying && playerState === YT.PlayerState.PLAYING) {
+          this.currentTime = time;
+          this.sendMove({
+            type: 'sync',
+            currentTime: time
+          });
+        } else if (!this.isPlaying) {
+          if (Math.abs(time - this.currentTime) > 1.5) {
+            this.currentTime = time;
+            this.sendMove({
+              type: 'playback',
+              isPlaying: false,
+              currentTime: time
+            });
+          }
+        }
+      } catch (err) {}
+    }, 1500);
   }
 
   applySync(data) {
-    if (!this.player) return;
+    if (!this.player || !this.player.seekTo) return;
 
-    const local = this.player.getCurrentTime();
-    const diff = Math.abs(local - data.currentTime);
+    try {
+      const local = this.player.getCurrentTime();
+      const diff = Math.abs(local - data.currentTime);
 
-    // correct drift if too large
-    if (diff > 1.5) {
-      this.isSyncing = true;
-      this.player.seekTo(data.currentTime, true);
-      setTimeout(() => (this.isSyncing = false), 300);
-    }
+      if (diff > 2) {
+        this.setSyncing();
+        this.player.seekTo(data.currentTime, true);
+        if (this.isPlaying) {
+          this.player.playVideo();
+        }
+      }
+    } catch (err) {}
   }
 
   /* ---------------- NETWORK SEND ---------------- */
 
   sendMove(payload) {
-    this.lastSyncTime = Date.now();
     this.onMove(payload);
   }
 
@@ -1177,22 +1216,43 @@ class GroupWatch {
   }
 
   receivedPlayback(data) {
-    if (!this.player) return;
+    if (!this.player || !this.player.seekTo) return;
 
-    this.isSyncing = true;
+    this.setSyncing();
+    this.isPlaying = data.isPlaying;
+    this.currentTime = data.currentTime;
 
-    if (data.isPlaying) {
-      this.player.seekTo(data.currentTime, true);
-      this.player.playVideo();
-    } else {
-      this.player.pauseVideo();
-    }
+    try {
+      const local = this.player.getCurrentTime();
+      const diff = Math.abs(local - data.currentTime);
 
-    setTimeout(() => (this.isSyncing = false), 300);
+      if (diff > 1) {
+        this.player.seekTo(data.currentTime, true);
+      }
+
+      if (data.isPlaying) {
+        this.player.playVideo();
+      } else {
+        this.player.pauseVideo();
+      }
+    } catch (err) {}
   }
 
   receivedSync(data) {
     this.applySync(data);
+  }
+
+  receivedChangeVideo() {
+    this.videoId = null;
+    this.showPresets = true;
+
+    if (this.player) {
+      this.player.destroy();
+      this.player = null;
+    }
+    
+    clearInterval(this.syncInterval);
+    this.render();
   }
 
   /* ---------------- UI ACTIONS ---------------- */
@@ -1232,6 +1292,9 @@ class GroupWatch {
       this.player.destroy();
       this.player = null;
     }
+    
+    clearInterval(this.syncInterval);
+    this.sendMove({ type: 'change-video' });
 
     this.render();
   }
@@ -1252,8 +1315,10 @@ class GroupWatch {
             `).join('')}
           </div>
 
-          <input id="youtube-url-input" placeholder="Paste YouTube URL"/>
-          <button onclick="window.currentGame.submitCustomUrl()">Load</button>
+          <div style="margin-top: 20px;">
+            <input id="youtube-url-input" placeholder="Paste YouTube URL" style="padding: 10px; width: 60%;"/>
+            <button onclick="window.currentGame.submitCustomUrl()" style="padding: 10px;">Load</button>
+          </div>
         </div>
       `;
       return;
@@ -1264,7 +1329,7 @@ class GroupWatch {
         <div class="youtube-watch-container">
           <h2>🎬 Watching Together</h2>
           <div id="youtube-player"></div>
-          <button onclick="window.currentGame.changeVideo()">Change Video</button>
+          <button onclick="window.currentGame.changeVideo()" style="margin-top: 20px;">Change Video</button>
         </div>
       `;
 

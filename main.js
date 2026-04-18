@@ -330,6 +330,8 @@ function handleGameMove(message) {
        currentGame.receivedPlayback(move);
      } else if (move.type === 'sync' && currentGame.receivedSync) {
        currentGame.receivedSync(move);
+     } else if (move.type === 'change-video' && currentGame.receivedChangeVideo) {
+       currentGame.receivedChangeVideo(move);
      }
    }
  }
