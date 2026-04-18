@@ -384,7 +384,7 @@ async function initializeVoiceChat() {
     voiceState.isCaller = true;
     
     // Step 3: Add local tracks BEFORE creating offer
-    voiceState.localStream.getAudioTracks().forEach(track => {
+    voiceState.localStream.getTracks().forEach(track => {
       voiceState.peerConnection.addTrack(track, voiceState.localStream);
     });
     
@@ -526,7 +526,7 @@ async function handleOffer(message) {
       voiceState.isCaller = false;
       
       // Add local tracks
-      voiceState.localStream.getAudioTracks().forEach(track => {
+      voiceState.localStream.getTracks().forEach(track => {
         voiceState.peerConnection.addTrack(track, voiceState.localStream);
       });
       
