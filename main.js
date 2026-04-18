@@ -13,6 +13,7 @@ let microphoneEnabled = false;
 let speakerEnabled = true;
 let currentGame = null;
 let isPlayer1 = true;
+let userHasInteracted = false; // Track if user has clicked/touched (needed for audio autoplay on production)
 
 const SIGNALING_SERVER = window.location.hostname === 'localhost' 
   ? `ws://${window.location.host}` 
@@ -284,28 +285,34 @@ async function initializeVoiceChat() {
        iceCandidatePoolSize: 10
      };
      
-     console.log('Creating RTCPeerConnection with TURN server:', configuration.iceServers.map(s => s.urls).join(', '));
-     
-     peerConnection = new RTCPeerConnection(configuration);
-     
-     // Add local stream to peer connection
-     localStream.getTracks().forEach(track => {
-       console.log('Adding local track:', track.kind);
-       peerConnection.addTrack(track, localStream);
-     });
-     
-     // Set up handlers
-     peerConnection.oniceconnectionstatechange = () => {
-       console.log('ICE Connection State:', peerConnection.iceConnectionState);
-     };
-     
-     peerConnection.onicegatheringstatechange = () => {
-       console.log('ICE Gathering State:', peerConnection.iceGatheringState);
-     };
-     
-     peerConnection.onconnectionstatechange = () => {
-       console.log('PeerConnection state:', peerConnection.connectionState);
-     };
+      console.log('Creating RTCPeerConnection with TURN server:', configuration.iceServers.map(s => s.urls).join(', '));
+      
+      peerConnection = new RTCPeerConnection(configuration);
+      
+      // Add local stream to peer connection
+      localStream.getTracks().forEach(track => {
+        console.log('Adding local track:', track.kind, 'enabled:', track.enabled, 'id:', track.id);
+        peerConnection.addTrack(track, localStream);
+      });
+      
+      console.log('Local tracks added. Total senders:', peerConnection.getSenders().length);
+      peerConnection.getSenders().forEach((sender, i) => {
+        console.log('Sender', i, ':', sender.track?.kind);
+      });
+      
+      // Set up handlers
+      peerConnection.oniceconnectionstatechange = () => {
+        console.log('ICE Connection State:', peerConnection.iceConnectionState);
+      };
+      
+      peerConnection.onicegatheringstatechange = () => {
+        console.log('ICE Gathering State:', peerConnection.iceGatheringState);
+      };
+      
+      peerConnection.onconnectionstatechange = () => {
+        console.log('PeerConnection state:', peerConnection.connectionState);
+        console.log('ICE Connection State at connection change:', peerConnection.iceConnectionState);
+      };
      
       // Handle remote stream
       peerConnection.ontrack = (event) => {
@@ -338,16 +345,25 @@ async function initializeVoiceChat() {
         updateRemoteAudioIndicator();
       };
      
-     // Handle ICE candidates
-     peerConnection.onicecandidate = (event) => {
-       if (event.candidate) {
-         console.log('Sending ICE candidate');
-         sendMessage({
-           type: 'ICE_CANDIDATE',
-           candidate: event.candidate
-         });
-       }
-     };
+      // Handle ICE candidates
+      peerConnection.onicecandidate = (event) => {
+        if (event.candidate) {
+          console.log('Sending ICE candidate');
+          sendMessage({
+            type: 'ICE_CANDIDATE',
+            candidate: event.candidate
+          });
+        }
+      };
+      
+      // Monitor track events
+      peerConnection.onaddtrack = (event) => {
+        console.log('onaddtrack fired:', event.track.kind);
+      };
+      
+      peerConnection.onremovetrack = (event) => {
+        console.log('onremovetrack fired:', event.track.kind);
+      };
      
      // Create and send offer
      const offer = await peerConnection.createOffer();
@@ -401,13 +417,18 @@ async function handleOffer(message) {
        
        console.log('Answerer: Creating RTCPeerConnection with TURN server');
        
-       peerConnection = new RTCPeerConnection(configuration);
-       
-       // Add local stream to peer connection BEFORE creating answer
-       localStream.getTracks().forEach(track => {
-         console.log('Answerer: Adding local track:', track.kind);
-         peerConnection.addTrack(track, localStream);
-       });
+        peerConnection = new RTCPeerConnection(configuration);
+        
+        // Add local stream to peer connection BEFORE creating answer
+        localStream.getTracks().forEach(track => {
+          console.log('Answerer: Adding local track:', track.kind, 'enabled:', track.enabled, 'id:', track.id);
+          peerConnection.addTrack(track, localStream);
+        });
+        
+        console.log('Answerer: Local tracks added. Total senders:', peerConnection.getSenders().length);
+        peerConnection.getSenders().forEach((sender, i) => {
+          console.log('Answerer: Sender', i, ':', sender.track?.kind);
+        });
        
         peerConnection.ontrack = (event) => {
           console.log('Answerer: Received remote track:', event.track.kind, 'Track enabled:', event.track.enabled);
@@ -672,4 +693,14 @@ function cleanup() {
 }
 
 // Initialize
+document.addEventListener('click', () => {
+  userHasInteracted = true;
+  console.log('User interaction detected - audio autoplay should now be allowed');
+});
+
+document.addEventListener('touchstart', () => {
+  userHasInteracted = true;
+  console.log('User touch detected - audio autoplay should now be allowed');
+});
+
 initWebSocket();
