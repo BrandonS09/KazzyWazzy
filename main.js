@@ -258,156 +258,160 @@ function handleGameMove(message) {
 
 async function initializeVoiceChat() {
    try {
-     // Get local media
+     // Get local media FIRST
+     console.log('📱 Requesting microphone...');
      localStream = await navigator.mediaDevices.getUserMedia({ 
-       audio: true, 
+       audio: {
+         echoCancellation: true,
+         noiseSuppression: true,
+         autoGainControl: true
+       },
        video: false 
      });
      
-     console.log('Local stream acquired:', localStream.getTracks());
+     console.log('✅ Microphone granted');
+     localStream.getAudioTracks().forEach(track => {
+       console.log('  📍 Track:', track.kind, 'ID:', track.id, 'Enabled:', track.enabled);
+     });
      
-     // Initialize WebRTC peer connection
+     // THEN create peer connection
      const configuration = {
        iceServers: [
-         // STUN servers - for NAT traversal
          { urls: 'stun:stun.l.google.com:19302' },
          { urls: 'stun:stun1.l.google.com:19302' },
          { urls: 'stun:stun2.l.google.com:19302' },
          { urls: 'stun:global.stun.twilio.com:3478' },
          { urls: 'stun:openrelay.metered.ca:443' },
-         // TURN server - for when STUN fails (free, no auth needed)
          { 
            urls: 'turn:openrelay.metered.ca:443',
            username: 'openrelayproject',
            credential: 'openrelayproject'
          }
-       ],
-       iceCandidatePoolSize: 10
+       ]
      };
      
-      console.log('Creating RTCPeerConnection with TURN server:', configuration.iceServers.map(s => s.urls).join(', '));
-      
-      peerConnection = new RTCPeerConnection(configuration);
-      
-      // Add local stream to peer connection
-      localStream.getTracks().forEach(track => {
-        console.log('Adding local track:', track.kind, 'enabled:', track.enabled, 'id:', track.id);
-        peerConnection.addTrack(track, localStream);
-      });
-      
-      console.log('Local tracks added. Total senders:', peerConnection.getSenders().length);
-      peerConnection.getSenders().forEach((sender, i) => {
-        console.log('Sender', i, ':', sender.track?.kind);
-      });
-      
-      // Set up handlers
-      peerConnection.oniceconnectionstatechange = () => {
-        console.log('ICE Connection State:', peerConnection.iceConnectionState);
-      };
-      
-      peerConnection.onicegatheringstatechange = () => {
-        console.log('ICE Gathering State:', peerConnection.iceGatheringState);
-      };
-      
-      peerConnection.onconnectionstatechange = () => {
-        console.log('PeerConnection state:', peerConnection.connectionState);
-        console.log('ICE Connection State at connection change:', peerConnection.iceConnectionState);
-      };
+     console.log('🔌 Creating peer connection...');
+     peerConnection = new RTCPeerConnection(configuration);
      
-      // Handle remote stream
-       peerConnection.ontrack = (event) => {
-        console.log('Received remote track:', event.track.kind, 'Track enabled:', event.track.enabled);
-        remoteStream = event.streams[0];
-        console.log('Remote stream received:', remoteStream, 'Audio tracks:', remoteStream.getAudioTracks().length);
-        
-        const remoteAudio = document.getElementById('remote-audio');
-        console.log('Remote audio element:', remoteAudio);
-        console.log('Remote audio element attributes - autoplay:', remoteAudio.autoplay, 'muted:', remoteAudio.muted);
-        
-        remoteAudio.srcObject = remoteStream;
-        remoteAudio.muted = false; // Ensure audio is not muted
-        console.log('Remote audio srcObject set to:', remoteAudio.srcObject, 'muted:', remoteAudio.muted);
-        
-        // Try to play the audio
-        const playPromise = remoteAudio.play();
-        if (playPromise !== undefined) {
-          playPromise.then(() => {
-            console.log('Remote audio playing successfully');
-          }).catch(error => {
-            console.error('Failed to play remote audio:', error);
-            // Try again after a short delay
-            setTimeout(() => {
-              remoteAudio.play().catch(err => console.error('Retry play failed:', err));
-            }, 100);
-          });
-        }
-        
-        // DON'T monitor audio for now - it might interfere with playback
-        // updateRemoteAudioIndicator();
-      };
+     // Set up event handlers BEFORE adding tracks
+     setupPeerConnectionHandlers();
      
-      // Handle ICE candidates
-      peerConnection.onicecandidate = (event) => {
-        if (event.candidate) {
-          console.log('Sending ICE candidate');
-          sendMessage({
-            type: 'ICE_CANDIDATE',
-            candidate: event.candidate
-          });
-        }
-      };
-      
-      // Monitor track events
-      peerConnection.onaddtrack = (event) => {
-        console.log('onaddtrack fired:', event.track.kind);
-      };
-      
-      peerConnection.onremovetrack = (event) => {
-        console.log('onremovetrack fired:', event.track.kind);
-      };
+     // ADD TRACKS BEFORE CREATING OFFER
+     console.log('🎤 Adding audio tracks...');
+     const audioTracks = localStream.getAudioTracks();
+     audioTracks.forEach((track, idx) => {
+       console.log(`  Adding track ${idx}: ${track.kind}`);
+       peerConnection.addTrack(track, localStream);
+     });
      
-     // Create and send offer
-     const offer = await peerConnection.createOffer();
+     console.log('✅ Tracks added. Senders:', peerConnection.getSenders().length);
+     
+     // NOW create offer
+     console.log('📤 Creating offer...');
+     const offer = await peerConnection.createOffer({
+       offerToReceiveAudio: true,
+       offerToReceiveVideo: false
+     });
+     console.log('✅ Offer created');
+     
+     // Set local description
+     console.log('📍 Setting local description...');
      await peerConnection.setLocalDescription(offer);
+     console.log('✅ Local description set');
      
-     // Send offer immediately - ICE candidates will come via onicecandidate handler
-     console.log('Sending offer (ICE candidates will follow separately)');
+     // Send offer
+     console.log('📬 Sending offer...');
      sendMessage({
        type: 'OFFER',
        offer: offer
      });
      
-     // Monitor local audio
-     monitorLocalAudio();
+     console.log('✅ Voice chat initialized');
      
    } catch (error) {
-     console.error('Error initializing voice chat:', error);
+     console.error('❌ Error initializing voice chat:', error);
      alert('Failed to access microphone. Please check permissions.');
    }
  }
 
+function setupPeerConnectionHandlers() {
+  console.log('⚙️ Setting up peer connection handlers...');
+  
+  // Handle incoming remote track
+  peerConnection.ontrack = (event) => {
+    console.log('🎵 ONTRACK EVENT FIRED');
+    console.log('  Track:', event.track.kind, 'ID:', event.track.id);
+    console.log('  Enabled:', event.track.enabled);
+    console.log('  Streams:', event.streams.length);
+    
+    if (event.streams && event.streams.length > 0) {
+      remoteStream = event.streams[0];
+      console.log('  ✅ Remote stream set, audio tracks:', remoteStream.getAudioTracks().length);
+      
+      // Play remote audio
+      const remoteAudio = document.getElementById('remote-audio');
+      if (remoteAudio) {
+        remoteAudio.srcObject = remoteStream;
+        remoteAudio.muted = false;
+        
+        remoteAudio.play()
+          .then(() => console.log('  ✅ Remote audio playing'))
+          .catch(e => console.error('  ❌ Play failed:', e.message));
+      }
+    }
+  };
+  
+  // Connection state
+  peerConnection.onconnectionstatechange = () => {
+    console.log('📡 Connection state:', peerConnection.connectionState);
+  };
+  
+  peerConnection.oniceconnectionstatechange = () => {
+    console.log('🧊 ICE state:', peerConnection.iceConnectionState);
+  };
+  
+  peerConnection.onicegatheringstatechange = () => {
+    console.log('🧊 ICE gathering:', peerConnection.iceGatheringState);
+  };
+  
+  // Send ICE candidates
+  peerConnection.onicecandidate = (event) => {
+    if (event.candidate) {
+      console.log('📤 Sending ICE candidate');
+      sendMessage({
+        type: 'ICE_CANDIDATE',
+        candidate: event.candidate
+      });
+    }
+  };
+}
+
 async function handleOffer(message) {
    try {
+     console.log('📬 Received offer (answerer)');
+     
      if (!peerConnection) {
-       // Answerer: need to get local media first if not already done
+       // Get local media first
        if (!localStream) {
-         console.log('Answerer: Getting local media first');
+         console.log('📱 Answerer requesting microphone...');
          localStream = await navigator.mediaDevices.getUserMedia({ 
-           audio: true, 
+           audio: {
+             echoCancellation: true,
+             noiseSuppression: true,
+             autoGainControl: true
+           },
            video: false 
          });
-         console.log('Answerer: Local stream acquired');
+         console.log('✅ Answerer microphone granted');
        }
        
        const configuration = {
          iceServers: [
-           // STUN servers - for NAT traversal
            { urls: 'stun:stun.l.google.com:19302' },
            { urls: 'stun:stun1.l.google.com:19302' },
            { urls: 'stun:stun2.l.google.com:19302' },
            { urls: 'stun:global.stun.twilio.com:3478' },
            { urls: 'stun:openrelay.metered.ca:443' },
-           // TURN server - for when STUN fails (free, no auth needed)
            { 
              urls: 'turn:openrelay.metered.ca:443',
              username: 'openrelayproject',
@@ -416,94 +420,51 @@ async function handleOffer(message) {
          ]
        };
        
-       console.log('Answerer: Creating RTCPeerConnection with TURN server');
+       console.log('🔌 Answerer creating peer connection...');
+       peerConnection = new RTCPeerConnection(configuration);
        
-        peerConnection = new RTCPeerConnection(configuration);
-        
-        // Add local stream to peer connection BEFORE creating answer
-        localStream.getTracks().forEach(track => {
-          console.log('Answerer: Adding local track:', track.kind, 'enabled:', track.enabled, 'id:', track.id);
-          peerConnection.addTrack(track, localStream);
-        });
-        
-        console.log('Answerer: Local tracks added. Total senders:', peerConnection.getSenders().length);
-        peerConnection.getSenders().forEach((sender, i) => {
-          console.log('Answerer: Sender', i, ':', sender.track?.kind);
-        });
+       // Set up handlers BEFORE adding tracks
+       setupPeerConnectionHandlers();
        
-        peerConnection.ontrack = (event) => {
-          console.log('Answerer: Received remote track:', event.track.kind, 'Track enabled:', event.track.enabled);
-          remoteStream = event.streams[0];
-          console.log('Answerer: Remote stream received:', remoteStream, 'Audio tracks:', remoteStream.getAudioTracks().length);
-          
-          const remoteAudio = document.getElementById('remote-audio');
-          console.log('Answerer: Remote audio element:', remoteAudio);
-          console.log('Answerer: Remote audio element attributes - autoplay:', remoteAudio.autoplay, 'muted:', remoteAudio.muted);
-          
-          remoteAudio.srcObject = remoteStream;
-          remoteAudio.muted = false; // Ensure audio is not muted
-          console.log('Answerer: Remote audio srcObject set to:', remoteAudio.srcObject, 'muted:', remoteAudio.muted);
-          
-          // Try to play the audio
-          const playPromise = remoteAudio.play();
-          if (playPromise !== undefined) {
-            playPromise.then(() => {
-              console.log('Answerer: Remote audio playing successfully');
-            }).catch(error => {
-              console.error('Answerer: Failed to play remote audio:', error);
-              // Try again after a short delay
-              setTimeout(() => {
-                remoteAudio.play().catch(err => console.error('Answerer: Retry play failed:', err));
-              }, 100);
-            });
-          }
-          
-          // DON'T monitor audio for now - it might interfere with playback
-          // updateRemoteAudioIndicator();
-        };
-       
-       peerConnection.onicecandidate = (event) => {
-         if (event.candidate) {
-           console.log('Answerer: Sending ICE candidate');
-           sendMessage({
-             type: 'ICE_CANDIDATE',
-             candidate: event.candidate
-           });
-         }
-       };
-       
-       peerConnection.onconnectionstatechange = () => {
-         console.log('Answerer: PeerConnection state:', peerConnection.connectionState);
-         
-         if (peerConnection.connectionState === 'failed' || peerConnection.connectionState === 'disconnected') {
-           console.error('Answerer: Peer connection failed or disconnected');
-         }
-       };
-       
-       peerConnection.oniceconnectionstatechange = () => {
-         console.log('Answerer: ICE Connection State:', peerConnection.iceConnectionState);
-       };
-       
-       peerConnection.onicegatheringstatechange = () => {
-         console.log('Answerer: ICE Gathering State:', peerConnection.iceGatheringState);
-       };
+       // Add tracks BEFORE setting remote description
+       console.log('🎤 Answerer adding audio tracks...');
+       localStream.getAudioTracks().forEach((track, idx) => {
+         console.log(`  Adding track ${idx}: ${track.kind}`);
+         peerConnection.addTrack(track, localStream);
+       });
+       console.log('✅ Answerer tracks added');
      }
      
+     // Set remote description
+     console.log('📍 Answerer setting remote description...');
      await peerConnection.setRemoteDescription(
        new RTCSessionDescription(message.offer)
      );
+     console.log('✅ Answerer remote description set');
      
-     const answer = await peerConnection.createAnswer();
+     // Create answer
+     console.log('📤 Answerer creating answer...');
+     const answer = await peerConnection.createAnswer({
+       offerToReceiveAudio: true,
+       offerToReceiveVideo: false
+     });
+     console.log('✅ Answerer answer created');
+     
+     // Set local description
+     console.log('📍 Answerer setting local description...');
      await peerConnection.setLocalDescription(answer);
+     console.log('✅ Answerer local description set');
      
-     // Send answer immediately
-     console.log('Answerer: Sending answer');
+     // Send answer
+     console.log('📬 Answerer sending answer...');
      sendMessage({
        type: 'ANSWER',
        answer: answer
      });
+     console.log('✅ Answerer sent answer');
+     
    } catch (error) {
-     console.error('Error handling offer:', error);
+     console.error('❌ Error handling offer:', error);
    }
  }
 
