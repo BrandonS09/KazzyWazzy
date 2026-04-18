@@ -277,7 +277,14 @@ async function initializeVoiceChat() {
       remoteStream = event.streams[0];
       const remoteAudio = document.getElementById('remote-audio');
       remoteAudio.srcObject = remoteStream;
-      console.log('Remote audio set, playing now');
+      
+      // Explicitly play the audio - browsers require this
+      remoteAudio.play().then(() => {
+        console.log('Remote audio playing');
+      }).catch(error => {
+        console.error('Failed to play remote audio:', error);
+      });
+      
       updateRemoteAudioIndicator();
     };
     
@@ -336,6 +343,14 @@ async function handleOffer(message) {
         remoteStream = event.streams[0];
         const remoteAudio = document.getElementById('remote-audio');
         remoteAudio.srcObject = remoteStream;
+        
+        // Explicitly play the audio - browsers require this
+        remoteAudio.play().then(() => {
+          console.log('Remote audio playing');
+        }).catch(error => {
+          console.error('Failed to play remote audio:', error);
+        });
+        
         updateRemoteAudioIndicator();
       };
       
