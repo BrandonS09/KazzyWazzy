@@ -1,17 +1,19 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Team Game Pairing</title>
+  <title>Game Grindr</title>
   <link rel="stylesheet" href="style.css">
 </head>
+
 <body>
   <div id="app">
     <!-- Lobby Screen -->
     <div id="lobby-screen" class="screen active">
-      <div class="container">
-        <h1>Team Game Pairing</h1>
+      <div class="container lobby-container">
+        <h1>Game Grindr</h1>
         <div class="lobby-content">
           <div class="username-input">
             <input type="text" id="username-input" placeholder="Enter your username">
@@ -57,7 +59,7 @@
           <h2 id="current-game">Game</h2>
           <p>Partner: <span id="game-partner-name">-</span></p>
         </div>
-        
+
         <div class="video-chat-section">
           <div class="video-controls">
             <button id="toggle-microphone" class="voice-btn">🎤 Enable Microphone</button>
@@ -111,4 +113,5 @@
   <script src="./main.js"></script>
   <audio id="queue-audio" loop src="/chug_jug.mp3"></audio>
 </body>
+
 </html>

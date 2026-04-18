@@ -904,9 +904,31 @@ class RockPaperScissors {
     this.playerMove = choice;
     this.showResult = true;
     this.onMove({ type: 'rps', choice });
+    
+    if (this.opponentMove) {
+      this.startNextRoundTimer();
+    }
+    
     this.render();
+  }
 
-    setTimeout(() => {
+  receivedMove(data) {
+    this.opponentMove = data.choice;
+
+    if (this.playerMove) {
+      const result = this.compareChoices(this.playerMove, this.opponentMove);
+      if (result === 'win') this.playerScore++;
+      if (result === 'loss') this.opponentScore++;
+      this.startNextRoundTimer();
+    }
+
+    this.render();
+  }
+
+  startNextRoundTimer() {
+    if (this.nextRoundTimeout) clearTimeout(this.nextRoundTimeout);
+    
+    this.nextRoundTimeout = setTimeout(() => {
       this.currentRound++;
       this.showResult = false;
       this.playerMove = null;
@@ -924,19 +946,7 @@ class RockPaperScissors {
       } else {
         this.render();
       }
-    }, 1500);
-  }
-
-  receivedMove(data) {
-    this.opponentMove = data.choice;
-
-    if (this.playerMove) {
-      const result = this.compareChoices(this.playerMove, this.opponentMove);
-      if (result === 'win') this.playerScore++;
-      if (result === 'loss') this.opponentScore++;
-    }
-
-    this.render();
+    }, 1000); // 1.0 second delay as requested
   }
 
   compareChoices(player, opponent) {
