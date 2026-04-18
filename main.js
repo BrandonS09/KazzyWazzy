@@ -14,7 +14,7 @@ let speakerEnabled = true;
 let currentGame = null;
 let isPlayer1 = true;
 
-const SIGNALING_SERVER = `ws://${window.location.host}`;
+const SIGNALING_SERVER = `https://kazzywazzy.onrender.com`;
 
 // Screen management
 function switchScreen(screenName) {
